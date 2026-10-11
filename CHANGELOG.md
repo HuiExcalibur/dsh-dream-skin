@@ -87,6 +87,17 @@
 
 同一轮裁定还**更正了自己写下的判断**：它曾把"工艺门『恰好两条』从未被变异证明"列为待补项，读码后发现 `tests/craft.quality.test.cjs:166` 早就往表里种了第三条脚规则并要求 `side-foot-hash-free` 判红，另配"真发货表必须绿"的对照。**评审记录里"没人证明过"这类句子，必须先去证明清单核对再说**，否则合并清单会把已经完成的工作重新写成欠账——本仓库第 9 号自纠形状（清单按出口核对）换了个方向复现。
 
+### 十二、发版那一刻的现查读数（含 registry 读侧延迟的一个新形状）
+
+- 提交 `21df82b`（rebase 到远端那条 daily `116709a` 之上，无文件交集）→ `main` 推送成功。CI run **38165778220** 六作业全绿（`typecheck` + `test` 18/20/22/24 + `Computed-style gate`）；`wash-gate` 日志里 `wash cascade OK` 出现 **2** 次（一次是引擎自己那行读数，一次是 belt-and-braces 那条 grep 命令被回显），即这一轮在 runner 上**有读数**而不是空过。
+- tag `v10.12.0` 打在 `21df82b` 上，单 refspec 推送。发布时现查：`gh issue list --state open --json number` → `[]`，`gh pr list --state open` → `[]`。
+- npm：`+ dsh-dream-skin@10.12.0` / **24 文件** / 381.6 kB / shasum **`bd69ffd182f950725fea7a8acf460f2b933fa8ac`**。registry 记的发布戳是 `2026-10-11T19:00:57.102Z`——比 `npm publish` 打印完成**晚约 4 分钟**，这是 registry 处理完成的时刻，对外报发布时间以它为准。
+- **读侧延迟的新形状（比 10.10.0 那次的"单版本 endpoint 404"更绕）**：`dist-tags.latest` 与 `time['10.12.0']` 在同一份 packument 里已经翻到 10.12.0 的**同一次读取**中，`versions['10.12.0']` 仍然是缺的（`npm view dsh-dream-skin --json` → `versionsKey=false / timeKey=true`）。所以"packument 里 `versions` 有没有这一条"**不能**当"发出去了没有"的判据；判据用 `time`，终局确认走 `npm view dsh-dream-skin@10.12.0 dist.shasum`（回 `bd69ffd1…`，与本地 `npm pack --dry-run` 逐位相同）。
+- 按 `docs/publishing-to-npm.md` 8.2 在一次性 profile 里从公共 registry 真装一次（24 小时窗口内，带 `--config.minimumReleaseAge=0`）：装后 `package.json` = `10.12.0`、`lib/client.js` 的 `PLUGIN_BUILD = "10.12.0"`、**24 文件**，`scripts/` `tests/` `CHANGELOG.md` `docs/screenshots` `docs/previews` **全不存在**，lockfile 的 `resolution.integrity` 是 `sha512-hT/TCdqtC9Pg7…Wez1Pirqz2C2w==`，与本地打包的 integrity 首尾一致 ⇒ 发出去的就是建出来的那个东西。装完把临时目录删掉，日常 profile 一个没碰。
+- **没做的事**：桌面 profile 没装（用户没要求，且那会改动 `~/.dsh/profiles/desktop`）；运行中的 DSH 实例一个字没动，A1 的壳上观感因此仍是 0 次目视（见「未验证 / 边界」）。
+
+顺带一条关于 §十 那道结构门的现读边界：它的编号正则 `^### ([一二三四五六七八九十])、` 是**单字符**字符类，所以 `### 十一、` / `### 十二、` 这种两位数编号**它读不到**。本轮不影响判定（一块里能被读到的最大编号是 `十`，丢标题仍会让 `十 → 一` 回退被抓），但这条边界得写下来而不是等哪天靠两位数编号的块来发现。
+
 ### 门与账本
 
 回归门 **480/480**（10.10.0 为 461）。+19 由套件现场加载数出来、按文件拆开记：`host.sidefoot` **9**（新文件）+ `craft.quality` **1** + `wash.cascade` **5**（对齐族四条变异那条 + §四 补的层叠与关系式六条那条 + 提取账目那条 + 注入面拒绝那条 + 几何腿前置条件那条）+ `client.storage` **1** + `host.gap` **1**（§九 那条入口拒绝）+ `docs.numbers` **2**（§十 的 CHANGELOG 块门 + 「引用不能当 scope 边界」的对照）；`client.smoke` 是**换形状**不是加条数（仍 135 条），所以不进这个加法。质量审计 **229/229**（217 调色 + 12 工艺），工艺门新增一枚即 `side-foot-hash-free`。本轮新增**变异 32 处**，全部是套件里能重跑的用例：工艺门 4（哈希锚点写回 / 脱作用域 / 塞 `transform` / 长出第三条）+ 引擎对齐 4（删左 margin / 删右 margin / 脱作用域 / 整族改名，各自点名翻红的判据 id 集合）+ 夹具层叠与关系式 6（宿主块换成不碰这个面 / 给宿主块加一条 `(0,2,0)` 的绘制 / **把宿主的 inset 从 `12px` 搬到 `9px` 并要求整组仍绿** / 同一个 `9px` 宿主上把我方写成 `-12px` 并要求三条右缘判据红 / 删 `padding-left` / 删 `padding-right`）+ 宿主形状 5（第二枚基名 / 整族改名 / 裸后缀配共享后缀 / 不再嵌套 / 已扁平化的树不许读成嵌套）+ D2 源码 2（恒假 / 丢掉空值判定）+ CHANGELOG 结构 2（删最新块标题 / 删下面某块标题，两条各点名必须由哪条腿接住）+ scope 边界对照 1（把下一块标题当引文写进正文，宣称必须照旧读得到）+ 夹具提取与注入面 6（`@media` 里带被读属性的脚规则必须拒绝建页 / 选择器列表里部分丢弃必须拒绝 / 四类注入字符串各塞一处 `</` 都必须拒绝建页，真夹具照旧要能建成）+ 几何腿的前置条件 2（两个盒子双双 `MISSING`、变量解析成空串，都必须红——相等判据不许把"都没读到"当成"一致"）。另有 **4 处具名的"不覆盖"循环**（`background` / `box-shadow` / `border` / `width` 删掉后断言 `redIds === []`）——它们不产生红，产生的是这句"这里今天没有覆盖"的读数本身。另有两处**门的入口判定**修正各配一条反向用例：新文件自己的 `hostRoot()` 与 §九 这条共享的 `findHostRoot()`——同一个病灶的两个实例，都要求"真读得到那个包"才算语料可用，都不许把"这台机器没有宿主"报成"检查失败"。`skin:check` / `host:census:check` / `previews:check` / `repo:eol` / `typecheck` 全绿；`npm run wash:check` 严格模式本机实跑 exit 0，判据组名单由门核对为 `['corner','desktop','fade','side']`（新增一组必须改这里，否则整组静默不跑）。
