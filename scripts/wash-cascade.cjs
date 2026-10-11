@@ -169,7 +169,8 @@ function pluginFadeRule(env) {
 const HOST_PACKAGES = [
 	{ key: 'layout', pkg: 'dsh-client-ui-layout', must: '--dsh-windows-content-radius', why: 'the AppFrame fill and the content corner' },
 	{ key: 'fade', pkg: 'dsh-client-ui-workspace', must: '_fade', why: 'the session-list foot fade the wash must neutralise' },
-	{ key: 'chat', pkg: 'dsh-client-ui-chat', must: '_fadeTop', why: 'the chat scroll masks that must NOT be touched' }
+	{ key: 'chat', pkg: 'dsh-client-ui-chat', must: '_fadeTop', why: 'the chat scroll masks that must NOT be touched' },
+	{ key: 'sidebar', pkg: 'dsh-client-ui-sidebar', must: '_footArea', why: 'the sidebar foot plane Roadmap A1 re-anchored onto the class suffix' }
 ];
 
 /**
@@ -253,6 +254,208 @@ function hostLayoutClasses(parts) {
 		frameClass: pick('frame', 'frame whose ::before paints the caption row'),
 		centerColClass: pick('centerCol', 'content corner issue #96 flattens'),
 		sidebarColClass: pick('sidebarCol', 'sidebar column that must survive untouched')
+	};
+}
+
+/**
+ * The sidebar foot classes, derived from the host's own CSS (Roadmap A1).
+ *
+ * This is the reading that string assertions cannot give: `[class$="_footArea"]` matching a
+ * selector in OUR sheet says nothing about whether it matches an ELEMENT. If the host ever
+ * composes a second class token onto that div (`class="hHd-Xa_footArea hHd-Xa_fading"`), the
+ * `$=` form stops matching while every text gate in this repository stays green — the same
+ * "declared equal is not pixels equal" shape 10.9.3 was corrected for. So the fixture is
+ * built from the base the host actually ships, and the checks below read computed style off
+ * a box.
+ */
+function hostSideFootClasses(parts) {
+	if (!parts.sidebar) throw new Error('no host sidebar CSS to read the foot plane classes from — build the fixture through buildFixture()');
+	const pick = (suffix, what) => {
+		// Selector POSITION, not `token{`: the host declares the two nested surfaces inside a
+		// selector LIST (`.hHd-Xa_settingsArea,.hHd-Xa_collapsed .hHd-Xa_footerActions{…}`), so
+		// requiring the brace after the token made the build refuse a class that is plainly
+		// there. The leading `(^|[},\s])\.` still has to hold, which is what keeps this a
+		// selector rather than a substring of some other identifier.
+		const hit = parts.sidebar.match(new RegExp('(?:^|[},\\s])\\.([A-Za-z0-9_-]*)_' + suffix + '(?![\\w-])'));
+		if (!hit) {
+			throw new Error(`the host sidebar CSS carries no \`.<token>_${suffix}\` selector — the fixture would have to INVENT the ${what} it claims to measure`);
+		}
+		return hit[1] + '_' + suffix;
+	};
+	return {
+		footClass: pick('footArea', 'landmark the foot plane is scoped by'),
+		settingsClass: pick('settingsArea', 'settings block inside that foot area'),
+		actionsClass: pick('footerActions', 'footer actions inside that foot area')
+	};
+}
+
+/**
+ * Every declaration block in a stylesheet, with the one fact the naive
+ * `/([^{}]+)\{([^{}]*)\}/` scan cannot tell: whether an `@media` / `@supports` wrapper stands
+ * above it. That distinction is the whole difference between "the host writes this rule" and
+ * "the host writes this rule WHEN" — and a fixture that cannot express the WHEN must not
+ * silently replay the rule as unconditional.
+ */
+function walkCssBlocks(css) {
+	const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
+	const out = [];
+	const stack = [];
+	let i = 0;
+	let seg = 0;
+	while (i < text.length) {
+		const ch = text[i];
+		if (ch === '{') {
+			const sel = text.slice(seg, i).replace(/\s+/g, ' ').trim();
+			const isAt = /^@/.test(sel);
+			stack.push({ sel, isAt, conditional: isAt || stack.some((f) => f.conditional) });
+			i++; seg = i; continue;
+		}
+		if (ch === '}') {
+			const frame = stack.pop();
+			const body = text.slice(seg, i).trim();
+			i++; seg = i;
+			if (frame && !frame.isAt) out.push({ sel: frame.sel, body, conditional: frame.conditional });
+			continue;
+		}
+		i++;
+	}
+	return out;
+}
+
+/** The properties the `side` group actually reads off the plane. */
+const SIDE_WATCHED_PROPS = ['margin-left', 'margin-right', 'padding-left', 'padding-right',
+	'width', 'background', 'box-shadow', 'border', 'display', 'flex-direction'];
+
+/** The declaration names carried by one rule body. */
+function declaredProps(body) {
+	return body.split(';')
+		.map((d) => (d.indexOf(':') >= 0 ? d.slice(0, d.indexOf(':')).trim().toLowerCase() : ''))
+		.filter(Boolean);
+}
+
+/** Does this property name fall under one of the watched ones (shorthand family included)? */
+function watchedFamily(prop) {
+	return SIDE_WATCHED_PROPS.some((w) => prop === w || prop.startsWith(`${w}-`));
+}
+
+/**
+ * The host's OWN declarations for those three boxes, verbatim.
+ *
+ * Why this exists: the first version of the `side` group put the host's class NAMES in the
+ * page and nothing else. Every reading then described our sheet applied to a bare `<div>`,
+ * which is not the cascade the user runs in — the host really does write
+ * `.<base>_footArea{display:flex}`, `.<base>_settingsArea{width:100%}` and friends, and our
+ * landmark branch is (0,1,0) — the SAME specificity as those rules, so the winner is decided
+ * by document order, not by anything we control from the bundle. A fixture without the host's
+ * own block cannot notice that at all: it would keep reading `transparent` after a host build
+ * that paints the foot plane and ships its sheet after ours.
+ *
+ * Two losses are handled by NAME, not by silence:
+ *   - a foot selector that does not look like a rule segment (element-prefixed, or a partial
+ *     drop inside a list) REFUSES the build — fewer host declarations in the page is a
+ *     different cascade, and a shape check cannot see quantity;
+ *   - a rule under `@media` / `@supports` cannot be replayed with its condition, so it is
+ *     SKIPPED and recorded. Skipping is only honest while none of its declarations is one the
+ *     checks read: today the host's one conditional foot rule is
+ *     `@media (prefers-reduced-motion:reduce){… .railIn .footArea{transition:none;animation:none}}`,
+ *     which touches nothing the group measures. The day a margin or a fill moves behind a
+ *     breakpoint, this REFUSES and the fixture has to grow a real condition.
+ *
+ * Returns `{ rules, skipped }`.
+ */
+function hostSideFootRules(sidebarCss, classes) {
+	const tokens = [classes.footClass, classes.settingsClass, classes.actionsClass];
+	const out = [];
+	const skipped = [];
+	const unshapeable = [];
+	for (const block of walkCssBlocks(sidebarCss)) {
+		const touching = block.sel
+			.split(',')
+			.map((s) => s.replace(/\s+/g, ' ').trim())
+			.filter((s) => tokens.some((t) => s.includes('.' + t)));
+		if (!touching.length) continue;
+		if (block.conditional) {
+			const props = declaredProps(block.body);
+			const loadBearing = props.filter(watchedFamily);
+			if (loadBearing.length) {
+				throw new Error('the host writes a foot-plane declaration the side group reads (`' + loadBearing.join(', ')
+					+ '`) under an @media/@supports condition the fixture cannot express (selector `'
+					+ touching[0].slice(0, 90) + '`) — replaying it unconditionally would measure a page nobody runs');
+			}
+			skipped.push({ selector: touching[0].slice(0, 120), props });
+			continue;
+		}
+		const kept = touching.filter((s) => /^[.[(]/.test(s));
+		if (kept.length !== touching.length) unshapeable.push(...touching.filter((s) => !kept.includes(s)));
+		if (!kept.length) continue;
+		out.push(kept.join(',') + '{' + block.body + '}');
+	}
+	if (!out.length) {
+		throw new Error('the host sidebar CSS names the foot classes but carries no readable rule for them — '
+			+ 'the fixture would measure our sheet against a bare div and call that a cascade');
+	}
+	if (unshapeable.length) {
+		throw new Error('the host writes foot-plane selectors the fixture cannot replay ('
+			+ unshapeable.length + ' of them, e.g. `' + unshapeable[0].slice(0, 90) + '`) — refusing instead of building a page '
+			+ 'where these declarations are missing while the readings still pass');
+	}
+	return { rules: out.join('\n'), skipped };
+}
+
+/**
+ * The host's own INSET convention, read out of the same sidebar CSS.
+ *
+ * Why this is in the fixture at all: the three numbers our foot-plane rule writes
+ * (`margin-left:-4px`, `margin-right:calc(-1 * var(--dsh-sidebar-inline-padding, 12px))`,
+ * `padding-left:4px`) are not ours — they are the convention the host itself uses for the
+ * region above the foot (`.<base>_regionArea{margin-left:-4px;margin-right:calc(-1 * var(…));
+ * padding-left:4px}`), and the variable is declared on `.<base>_root`, together with the
+ * `padding:6px var(…)` that makes the bleed necessary. Without those rules in the page, a
+ * reading of `-12px` only proves OUR FALLBACK equals OUR FALLBACK: the relational half of the
+ * claim ("we follow the host's own inset") had no observation behind it. Loading them turns
+ * three typed constants into measurements, and a host that moves the variable now moves both
+ * sides of the comparison instead of leaving us silently 4px out of date.
+ *
+ * Everything here is derived from the host CSS and nothing is remembered: a renamed class or a
+ * dropped declaration REFUSES the build rather than falling back to a literal.
+ */
+function hostSideInsets(sidebarCss) {
+	const rules = walkCssBlocks(sidebarCss);
+
+	// The element that DECLARES the variable.
+	const varRule = rules.find((r) => /--dsh-sidebar-inline-padding\s*:/.test(r.body));
+	if (!varRule) {
+		throw new Error('the host sidebar CSS no longer declares --dsh-sidebar-inline-padding anywhere — '
+			+ 'the fixture would have to INVENT the inset the alignment rule claims to follow');
+	}
+	if (varRule.conditional) {
+		throw new Error('the host declares --dsh-sidebar-inline-padding only under an @media/@supports condition — '
+			+ 'the fixture cannot express that, and a variable that appears at some viewport widths is not the '
+			+ 'inset our rule claims to follow everywhere');
+	}
+	const rootSel = varRule.sel.split(',').map((s) => s.trim()).filter((s) => /^\.[\w-]+$/.test(s))[0];
+	if (!rootSel) {
+		throw new Error(`the host declares the inset variable on \`${varRule.sel}\`, which is not a single class the fixture can place — `
+			+ 'the variable would not reach the foot plane and the relational reading would be about nothing');
+	}
+	// The host's own bled region, which is the convention we copy.
+	const regionMatches = rules.filter((r) => /_regionArea(?![\w-])/.test(r.sel) && /margin-left\s*:/.test(r.body));
+	const regionRule = regionMatches.find((r) => !r.conditional);
+	if (!regionRule) {
+		throw new Error(regionMatches.length
+			? 'the host gives `._regionArea` its margin-left only under an @media/@supports condition — the fixture cannot replay a conditional convention'
+			: 'the host sidebar CSS carries no `._regionArea` rule with a margin-left — '
+				+ 'the `-4px` our foot plane writes would be an unverifiable literal again');
+	}
+	const regionSel = regionRule.sel.split(',').map((s) => s.trim()).filter((s) => /^\.[\w-]+_regionArea$/.test(s))[0];
+	if (!regionSel) {
+		throw new Error(`the region rule is declared under \`${regionRule.sel}\`; the fixture cannot name it — refuse rather than guess`);
+	}
+	return {
+		rootClass: rootSel.replace(/^\./, ''),
+		rootRule: `${rootSel}{${varRule.body}}`,
+		regionClass: regionSel.replace(/^\./, ''),
+		regionRule: `${regionSel}{${regionRule.body}}`
 	};
 }
 
@@ -358,6 +561,18 @@ function buildFixture(opts = {}) {
 	parts.frameClass = frame.frameClass;
 	parts.centerColClass = frame.centerColClass;
 	parts.sidebarColClass = frame.sidebarColClass;
+	const side = hostSideFootClasses(parts);
+	parts.footClass = side.footClass;
+	parts.settingsClass = side.settingsClass;
+	parts.actionsClass = side.actionsClass;
+	const foot = hostSideFootRules(parts.sidebar, side);
+	parts.hostFootRules = foot.rules;
+	parts.hostFootConditionalSkipped = foot.skipped;
+	const inset = hostSideInsets(parts.sidebar);
+	parts.insetRootClass = inset.rootClass;
+	parts.insetRootRule = inset.rootRule;
+	parts.insetRegionClass = inset.regionClass;
+	parts.insetRegionRule = inset.regionRule;
 	return parts;
 }
 
@@ -376,12 +591,43 @@ function fixtureHtml(parts) {
 	if (!parts.corner) {
 		throw new Error('the corner fixture tokens were not read from the shipped bundle — build the fixture through buildFixture()');
 	}
+	if (!parts.footClass || !parts.settingsClass || !parts.actionsClass) {
+		throw new Error('the host sidebar foot classes were not derived from the host CSS — build the fixture through buildFixture()');
+	}
+	if (!parts.hostFootRules) {
+		throw new Error('the host\'s own foot-plane declarations were not read — without them the side group measures our sheet against a bare div, not against a cascade');
+	}
+	if (!parts.insetRootRule || !parts.insetRegionRule) {
+		throw new Error('the host\'s own inset convention (the rule that DECLARES --dsh-sidebar-inline-padding, plus the region above the foot) was not read — '
+			+ 'the -4px / -12px / 4px our alignment rule writes would then be literals compared against nothing');
+	}
 	const fadeClass = parts.fadeClass;
 	const chatClass = parts.chatClass;
+	// Every CSS string below is interpolated into the page inside a `<style>` element, so one
+	// `</` in any of them ends the sheet early and the readings come from a DIFFERENT document
+	// than the one we think we built — while still looking like values. The host CSS is an
+	// external string here (a `content:"…"` value can carry it), so this is a boundary, not a
+	// formality. Refuse the page; do not sanitize it into a different document.
+	const injected = {
+		material: parts.material,
+		hostFootRules: parts.hostFootRules,
+		insetRootRule: parts.insetRootRule,
+		insetRegionRule: parts.insetRegionRule,
+	};
+	for (const key of Object.keys(injected)) {
+		if (String(injected[key] || '').indexOf('</') >= 0) {
+			throw new Error(`the fixture cannot inject \`${key}\`: it carries "</", which would close a <style> element `
+				+ 'and turn the measured page into a different document from the one the gate believes it built');
+		}
+	}
 	const inJs = JSON.stringify('.' + fadeClass);
 	const inJsChat = JSON.stringify('.' + chatClass);
 	const inJsCenter = JSON.stringify('.' + parts.centerColClass);
 	const inJsSidebar = JSON.stringify('.' + parts.sidebarColClass);
+	const inJsFoot = JSON.stringify('.' + parts.footClass);
+	const inJsRegion = JSON.stringify('.' + parts.insetRegionClass);
+	const inJsSettings = JSON.stringify('.' + parts.settingsClass);
+	const inJsActions = JSON.stringify('.' + parts.actionsClass);
 	// THREE fixture choices here are load-bearing for the 10.9.3 judgement, and all were wrong
 	// before it. (1) The canvas token is TRANSLUCENT: the real one is whatever the 弹窗透明度
 	// slider publishes (measured 0.4 on the desktop profile), and an opaque token composites to
@@ -410,11 +656,31 @@ ${parts.chat}</style>
    one layer shallower than reality, which is how 10.9.2 passed every gate and still shipped a
    light band. Modelled as a fixture class, not a host hash: the layer is what matters, and its
    name is the host's to rename. */
-.fixture-app-root{background:var(--dsw-alias-bg-base)}</style>
+.fixture-app-root{background:var(--dsw-alias-bg-base)}
+/* THE DECOY (Roadmap A1). A second element whose class ALSO ends in "_footerActions", placed
+   OUTSIDE the foot area. It stands for the components that really do use that suffix —
+   dsh-client-ui-user-questions ships Mbwy4a_footerActions, and the desktop shell's corpus
+   has a second base for it too. It carries its own paint and its own margin so that an
+   UNSCOPED [class$="_footerActions"] cannot pass: our rule is (0,1,0) like this one and
+   comes later in the document, so it would win, and the readings below would move. This is
+   the half of the scoping claim a text gate cannot make. */
+.fixture-decoy_footerActions{background:rgb(7, 7, 7);border-top:1px solid rgb(51, 51, 51);margin-left:0px;padding-left:0px}</style>
+<style id="fixture-host-inset">${parts.insetRootRule}
+${parts.insetRegionRule}</style>
+<style id="fixture-host-foot">${parts.hostFootRules}</style>
 <style id="plugin-material">${parts.material}</style>
 </head><body>
 <div class="${parts.frameClass}" data-shell-frame>
-  <div class="${parts.sidebarColClass}"><div class="fixture-app-root">sidebar column</div></div>
+  <div class="${parts.sidebarColClass}"><div class="fixture-app-root">sidebar column
+    <div class="${parts.insetRootClass}">
+      <div class="${parts.insetRegionClass}">the region above the foot (the host owns this inset convention)</div>
+      <div class="${parts.footClass}">
+      <div class="${parts.actionsClass}">footer actions</div>
+      <div class="${parts.settingsClass}">settings area</div>
+    </div>
+    <div class="fixture-decoy_footerActions">another component's footer</div>
+    </div>
+  </div></div>
   <div class="${parts.centerColClass}">
     <div class="fixture-app-root">
       <span class="${fadeClass}">fade</span>
@@ -432,6 +698,16 @@ ${parts.chat}</style>
   var ref = document.getElementById('sidebar-fill-ref');
   var fade = document.querySelector(${inJs});
   var chat = document.querySelector(${inJsChat});
+  var foot = document.querySelector(${inJsFoot});
+  // The host's OWN bled region, sitting above the foot plane. It is the comparison this fix is
+  // actually about: our rule exists to make the foot plane bleed to exactly the same outer box
+  // as the region above it, so the seam between them closes. Measuring our own margin-left
+  // against a typed -4px proves the declaration applied; measuring the foot's rect against
+  // THIS element's rect proves the two line up on the page — and it needs no literal from us.
+  var footRegion = document.querySelector(${inJsRegion});
+  var footActions = document.querySelector(${inJsActions});
+  var footSettings = document.querySelector(${inJsSettings});
+  var footDecoy = document.querySelector('.fixture-decoy_footerActions');
   var WASH = 'data-dsh-dream-skin-wash';
   var out = [];
   // ── the layer reader ──────────────────────────────────────────────────────
@@ -549,6 +825,46 @@ ${parts.chat}</style>
       stripHeight: strip.height,
       stripTransform: strip.transform,
       sidebarColFill: getComputedStyle(sidebarCol).backgroundColor,
+      // ROADMAP A1 — the sidebar foot plane, read off boxes rather than off text.
+      // margin-left is the declaration our alignment rule writes (-4px); the host's own
+      // value there is 0px, so a -4px reading proves two things at once: the hash-free
+      // [class$="_footArea"] anchor reaches a real element, and it reaches the nested two
+      // through the descendant combinator. The decoy is the scoping half: its class ALSO
+      // ends in _footerActions but it is not inside the foot area, so it must keep its own
+      // margin, paint and border.
+      footMarginLeft: foot ? getComputedStyle(foot).marginLeft : 'MISSING',
+      footMarginRight: foot ? getComputedStyle(foot).marginRight : 'MISSING',
+      footPaddingLeft: foot ? getComputedStyle(foot).paddingLeft : 'MISSING',
+      footPaddingRight: foot ? getComputedStyle(foot).paddingRight : 'MISSING',
+      footBg: foot ? getComputedStyle(foot).backgroundColor : 'MISSING',
+      // Are the HOST's own foot declarations actually in this page? Every reading above would
+      // still come out "right" on a fixture where our sheet is applied to a bare div, and that
+      // is a different page from the one the user runs. display / flex-direction are the tell:
+      // the host writes them for its own footArea class, we never do, so a block/row reading
+      // here means the host block went missing and the whole group stopped being a cascade test.
+      footDisplay: foot ? getComputedStyle(foot).display : 'MISSING',
+      footFlexDirection: foot ? getComputedStyle(foot).flexDirection : 'MISSING',
+      footShadow: foot ? getComputedStyle(foot).boxShadow : 'MISSING',
+      footBorderTop: foot ? getComputedStyle(foot).borderTopWidth : 'MISSING',
+      // GEOMETRY against the host's own bled region (see the lookup above). rect values are
+      // floats, so they are rounded to whole pixels here — the claim is "these two edges are the
+      // same line on the page", which is a sub-pixel question nobody is making.
+      footRectLeft: foot ? Math.round(foot.getBoundingClientRect().left) + 'px' : 'MISSING',
+      footRectRight: foot ? Math.round(foot.getBoundingClientRect().right) + 'px' : 'MISSING',
+      regionRectLeft: footRegion ? Math.round(footRegion.getBoundingClientRect().left) + 'px' : 'MISSING',
+      regionRectRight: footRegion ? Math.round(footRegion.getBoundingClientRect().right) + 'px' : 'MISSING',
+      regionMarginLeft: footRegion ? getComputedStyle(footRegion).marginLeft : 'MISSING',
+      regionMarginRight: footRegion ? getComputedStyle(footRegion).marginRight : 'MISSING',
+      // The variable OUR rule falls back on, read off the foot box: with the host's own root
+      // rule in the page this resolves from the HOST, so -12px stops being our fallback
+      // agreeing with itself.
+      insetVarOnFoot: foot ? getComputedStyle(foot).getPropertyValue('--dsh-sidebar-inline-padding').trim() : 'MISSING',
+      settingsWidth: footSettings ? getComputedStyle(footSettings).width : 'MISSING',
+      actionsMarginLeft: footActions ? getComputedStyle(footActions).marginLeft : 'MISSING',
+      settingsMarginLeft: footSettings ? getComputedStyle(footSettings).marginLeft : 'MISSING',
+      decoyMarginLeft: footDecoy ? getComputedStyle(footDecoy).marginLeft : 'MISSING',
+      decoyBg: footDecoy ? getComputedStyle(footDecoy).backgroundColor : 'MISSING',
+      decoyBorder: footDecoy ? getComputedStyle(footDecoy).borderTopWidth : 'MISSING',
       // The surface the caption band sits above. The band's promise (10.9.2) is "look like the
       // content column", so the comparison target has to be MEASURED, not typed into this file —
       // a hand-copied colour here would keep "passing" after the skin, the slider or the token
@@ -1131,7 +1447,7 @@ function cssAlpha(value) {
 	return parts.length < 4 ? 1 : Number(parts[3]);
 }
 
-const WASH_GROUPS = ['corner', 'fade', 'desktop'];
+const WASH_GROUPS = ['corner', 'fade', 'desktop', 'side'];
 
 const WASH_CHECKS = [
 	{ id: 'corner-host-own', requires: ['corner'], group: 'corner', msg: 'plain: the host corner must stay its own 16px', ok: (plain) => plain.corner === '16px' },
@@ -1198,6 +1514,50 @@ const WASH_CHECKS = [
 	{ id: 'desktop-token-sweeps-slider', requires: ['sweepBg', 'sidebarBg', 'sweepAside', 'surfaceBg'], group: 'desktop', msg: `writing a sentinel --dsw-specific-sidebar-fill must change what the sidebar element COMPUTES, with and without a wash — the reporter's complaint is "the slider moves and no pixel does", and this is that sentence in computed values (the shell's shadow value would leave the reading frozen)`, ok: (plain, wash) => plain.sweepBg === DESKTOP_SWEEP && wash.sweepBg === DESKTOP_SWEEP
 		&& plain.sweepBg !== plain.sidebarBg && wash.sweepBg !== wash.sidebarBg && plain.sweepAside === plain.surfaceBg },
 	{ id: 'desktop-shell-chrome-kept', requires: ['borderRight'], group: 'desktop', msg: 'the shell’s own border must survive the wash', ok: (plain, wash) => wash.borderRight === plain.borderRight && /1px solid/.test(plain.borderRight || '') },
+	// ── Roadmap A1: the sidebar foot plane, measured off boxes ─────────────────────────
+	// The host's own baseline is `margin-left: 0px` on `_footArea` (it declares no margin
+	// there — read out of dsh-client-ui-sidebar's CSS), so a -4px reading is ONLY explicable
+	// by our rule matching a real element. That is the claim the text gates cannot make: an
+	// anchor can be present in the sheet, present in the probe list, and still reach nothing
+	// if the host ever composes a second class token onto that div.
+	{ id: 'side-plane-aligns', requires: ['footMarginLeft'], group: 'side', msg: 'plain: the hash-free foot anchor must reach a real box and move its margin to -4px — "the selector is in the sheet" is not "the selector matched an element"', ok: (plain) => plain.footMarginLeft === '-4px' },
+	{ id: 'side-plane-aligns-right', requires: ['footMarginRight', 'insetVarOnFoot'], group: 'side', msg: 'plain: the right edge follows the HOST variable, not our fallback — the reading must equal the negation of whatever --dsh-sidebar-inline-padding resolves to on this box (the host declares it on its own root; the fixture loads that rule, so this is the host answering, not 12px agreeing with 12px)', ok: (plain) => plain.insetVarOnFoot !== '' && plain.insetVarOnFoot !== 'MISSING' && plain.footMarginRight === '-' + plain.insetVarOnFoot },
+	// The seam itself, as geometry: our foot plane and the host's own bled region must be the
+	// same outer box. No literal from us appears in this comparison.
+	{ id: 'side-plane-flush-with-host-region', requires: ['footRectLeft', 'footRectRight', 'regionRectLeft', 'regionRectRight'], group: 'side', msg: 'plain: the foot plane bleeds to exactly the same left and right lines as the host\'s own region above it — which is what "the 断裂 is closed" means on a page, stated without comparing anything to a number we typed', ok: (plain) => plain.footRectLeft !== 'MISSING' && plain.regionRectLeft !== 'MISSING' && plain.footRectLeft === plain.regionRectLeft && plain.footRectRight === plain.regionRectRight && plain.footMarginLeft === plain.regionMarginLeft && plain.footMarginRight === plain.regionMarginRight },
+	{ id: 'side-nested-surfaces-align', requires: ['actionsMarginLeft', 'settingsMarginLeft'], group: 'side', msg: 'plain: both nested surfaces are reached THROUGH the foot area, so the descendant combinator resolves in a real engine', ok: (plain) => plain.actionsMarginLeft === '-4px' && plain.settingsMarginLeft === '-4px' },
+	// The scoping claim, made as pixels. `_footerActions` is not ours alone — the question
+	// card draws `Mbwy4a_footerActions` and the desktop shell's corpus has a second base for
+	// the same suffix. This decoy element ends in `_footerActions` but sits outside the foot
+	// area; un-scope our anchor and it loses its margin, its fill and its border to us.
+	{ id: 'side-decoy-footer-untouched', requires: ['decoyMarginLeft', 'decoyBg', 'decoyBorder'], group: 'side', msg: 'plain: a component whose class ALSO ends in `_footerActions` but that is not inside the foot area keeps its own margin, paint and border — the scoping is load-bearing, not stylistic', ok: (plain) => plain.decoyMarginLeft === '0px' && plain.decoyBg === 'rgb(7, 7, 7)' && plain.decoyBorder === '1px' },
+	{ id: 'side-plane-not-wash-gated', requires: ['footMarginLeft', 'decoyBg'], group: 'side', msg: 'wash: the alignment and the erase are deliberately ungated — the seam exists with or without a wallpaper, and a wash may not move the plane or reach the decoy either', ok: (plain, wash) => wash.footMarginLeft === plain.footMarginLeft && wash.decoyBg === plain.decoyBg && wash.decoyMarginLeft === plain.decoyMarginLeft },
+	// Anti-hole for the group above: the host's OWN foot declarations must be in the page, or
+	// every side reading is our sheet applied to a bare div. These two properties are ones we
+	// never write, so they can only come from the host block.
+	{ id: 'side-host-foot-css-in-play', requires: ['footDisplay', 'footFlexDirection'], group: 'side', msg: 'plain: the host\'s own `.<base>_footArea{display:flex;flex-direction:column}` really loads in this fixture — without it the side group is our sheet on a div, not a cascade', ok: (plain) => plain.footDisplay === 'flex' && plain.footFlexDirection === 'column' },
+	// The compensation pair, as a relation rather than a pair of literals. The rule pulls the
+	// plane out by N and pushes its content back in by N; asserting `padding === |margin|` (and
+	// that both right-hand numbers equal the host variable the pull is computed from) is what
+	// makes the two padding declarations observable — before this leg, deleting either padding
+	// declaration changed nothing the gate read.
+	{ id: 'side-padding-compensates-inset', requires: ['footMarginLeft', 'footMarginRight', 'footPaddingLeft', 'footPaddingRight', 'insetVarOnFoot'], group: 'side', msg: 'plain: each side pulls the plane out and pads its content back by the SAME amount (right side equals the host variable both ways) — so the bleed cannot widen the seam it exists to close', ok: (plain) => {
+		const pullL = Math.abs(parseFloat(plain.footMarginLeft));
+		const padL = parseFloat(plain.footPaddingLeft);
+		const pullR = Math.abs(parseFloat(plain.footMarginRight));
+		const padR = parseFloat(plain.footPaddingRight);
+		const hostVar = parseFloat(plain.insetVarOnFoot);
+		if ([pullL, padL, pullR, padR, hostVar].some((n) => !Number.isFinite(n))) return false;
+		return padL === pullL && padR === pullR && pullR === hostVar;
+	} },
+	// The erase half, and what it can and CANNOT claim. The host writes no background, box-shadow
+	// or border for these three classes (measured, both corpora), so with only today's host CSS
+	// this check would read transparent / none / 0px EVEN IF our declarations were deleted —
+	// stripping them reddens nothing, and that is recorded rather than hidden (see the
+	// documented-non-coverage legs in tests/wash.cascade.test.cjs). What this check DOES own is
+	// the outcome under competition: the moment the host paints this plane harder than (0,1,0),
+	// it goes red, which is the only reason the erase is in the sheet at all.
+	{ id: 'side-erase-wins-over-host-sheet', requires: ['footBg', 'footShadow', 'footBorderTop'], group: 'side', msg: 'plain: with the host sheet loaded, our erase still owns the foot plane (no fill, no shadow, no border) at (0,1,0) vs (0,1,0) — the win comes from being the later sheet. CANARY, not coverage: today nothing competes, so this reads the same with our declarations stripped (recorded); it exists to fail when a host build starts painting this plane', ok: (plain) => plain.footBg === 'rgba(0, 0, 0, 0)' && plain.footShadow === 'none' && plain.footBorderTop === '0px' },
 ];
 
 /**
@@ -1270,6 +1630,7 @@ module.exports = {
 	cornerTokens, cssColor, CORNER_SKIN, CORNER_ALPHA,
 	DESKTOP_SWEEP, browserAttempts, stripDeclaration, checkReadings, WASH_CHECKS, WASH_GROUPS,
 	hostCss, hostSidebarConsumer, hostFadeClasses, hostLayoutClasses, pluginFadeRule, SKIN_CENTER_PKG,
+	hostSideFootRules, hostSideInsets, walkCssBlocks, SIDE_WATCHED_PROPS,
 	DESKTOP_SHELL_CSS, DESKTOP_SHELL_SOURCE, HOST_PACKAGES, DEFAULT_HOST_ROOT,
 	probeBrowser, gradeStage, environmentError, runChrome, cliOutcome, strictRequested
 };

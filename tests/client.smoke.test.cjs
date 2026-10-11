@@ -39,6 +39,24 @@ const path = require('node:path');
 
 const CODE = fs.readFileSync(path.join(__dirname, '..', 'lib', 'client.js'), 'utf8');
 
+/**
+ * Roadmap A1: the sidebar foot group exactly as the BUNDLE probes it.
+ *
+ * Derived from lib/client.js rather than typed here. A fixture that hardcodes a probe
+ * selector while the bundle probes a different one does not fail — it just mounts nothing,
+ * leaves the group permanently "missing", and keeps asserting about some other page. The
+ * old `.hHd-Xa_root …` string was copy-pasted into five places in this file; a rename now
+ * moves every one of them with it.
+ */
+const SIDEBAR_PROBE_SEL = (() => {
+	const pick = (name) => {
+		const m = new RegExp(`const ${name} = "((?:[^"\\\\]|\\\\.)*)"`).exec(CODE);
+		if (!m) throw new Error(`${name} moved out of lib/client.js — the drift-probe fixture cannot name the sidebar group`);
+		return m[1].replace(/\\"/g, '"');
+	};
+	return [pick('SIDEBAR_FOOT_SELECTOR'), pick('SIDEBAR_SETTINGS_SELECTOR'), pick('SIDEBAR_FOOTER_ACTIONS_SELECTOR')].join(', ');
+})();
+
 // The drift probe now runs a bounded delay ladder (A-1; R-4 round 2 renamed
 // CHECKPOINTS→RETRY_DELAYS because the entries are RELATIVE gaps, cumulative
 // ≈0/300/1300/4300ms). Fast-path tests patch the ladder to low hundreds of
@@ -2123,11 +2141,13 @@ test('liquid-glass material CSS is injected on leaf cards only (no fixed-modal a
 	// settings modal, and blurring them broke fixed positioning.
 	assert.ok(!/centerCol/.test(css), 'must NOT blur the main center column');
 	assert.ok(!/sidebarCol/.test(css), 'must NOT blur the sidebar column');
-	// The sidebar root may never be a blur target (regression guard). It may still
-	// appear as a scoping PREFIX in alignment rules (e.g. `.hHd-Xa_root .hHd-Xa_footArea`)
-	// that only adjust margins — those never set backdrop-filter. So the guard is: any
-	// rule that mentions the sidebar root must NOT carry a backdrop-filter.
-	assert.ok(!/hHd-Xa_root[^A-Za-z0-9_-]*\{[^}]*backdrop-filter/.test(css) && !/hHd-Xa_root[^A-Za-z0-9_-]*\{[^}]*filter:/.test(css), 'must NOT blur the sidebar root');
+	// The sidebar's foot surfaces may never be a blur target (regression guard): they
+	// host the settings modal and the slot-rendered footer actions, and blurring an
+	// ancestor of a fixed-position element broke it. Re-anchored to the hash-free forms
+	// by Roadmap A1, so the guard reads those — the old copy keyed on `hHd-Xa_root`, a
+	// selector this sheet no longer contains, which would have made the guard
+	// unconditionally true (a green light with nothing behind it).
+	assert.ok(!/\[class\$="_footArea"\][^{]*\{[^}]*backdrop-filter/.test(css) && !/\[class\$="_footArea"\][^{]*\{[^}]*[^-]filter:/.test(css), 'must NOT blur the sidebar foot surfaces');
 	// The composer root must stay a leaf-only surface with NO sharp outer frame.
 	// The old full-width "bottom scrim" gradient painted a wide rectangular band
 	// behind the (narrower, rounded) composer card, which read as an ugly
@@ -2152,7 +2172,19 @@ test('liquid-glass material CSS is injected on leaf cards only (no fixed-modal a
 	// the sidebar footer/settings must be one uniform plane with the list.
 	assert.ok(css.includes('.nArs4W_panel'), 'right file panel themed to sidebar fill');
 	assert.ok(css.includes('var(--dsw-specific-sidebar-fill)'), 'right panel uses the shared sidebar fill');
-	assert.ok(css.includes('.hHd-Xa_settingsArea, .hHd-Xa_footerActions'), 'sidebar footer/settings pinned to one plane');
+	// Roadmap A1: the sidebar foot plane. Three claims, because "the string is in there"
+	// was the shape that let 10.9.x ship a rule that could never match:
+	//   1. the sheet addresses the surfaces through the hash-free anchors the bundle
+	//      derives (same constants the drift probe uses, so the sheet and the probe
+	//      cannot describe different pages);
+	//   2. EXACTLY two rules do that — the margin alignment and the fill erase. A third
+	//      one creeping in is a decision nobody took, and a shape gate cannot see count;
+	//   3. no CLASS-FORM `_footArea` selector survives, which is what "去哈希依赖" means
+	//      here: `.anything_footArea` is addressable only by a host that keeps its hash.
+	assert.ok(css.includes(SIDEBAR_PROBE_SEL), 'sidebar footer/settings pinned to one plane, through the hash-free anchors');
+	assert.equal(css.split(SIDEBAR_PROBE_SEL + ' {').length - 1, 2, 'the foot plane is exactly two rules (alignment + erase) — more means an unclaimed decision, fewer means one was dropped');
+	assert.ok(!/\.[\w-]+_footArea/.test(css), 'no class-form sidebar foot anchor may survive: only the suffix form is hash-free');
+	assert.ok(!/\.[\w-]+_footerActions/.test(css), 'no class-form footerActions anchor: `_footerActions` is shared with the question card, so it must stay scoped under `_footArea`');
 	assert.ok(css.includes('.qDHVXG_fade'), 'list-end fade removed for a uniform left column');
 	// Dropdown / popup menu readability (issue: menus see-through): since 0.4.5 the
 	// menu / popover fill is driven by the popup-opacity token override layer
@@ -3523,7 +3555,7 @@ test('drift probe (#96/#97): an attribute-anchored group is judged by what the H
 	const HOST_RENAMED = '.lXshSW_root{display:block}.bhn1Oq_fadeFoot{background:linear-gradient(red,blue)}';
 	const MOUNTED = new Set([
 		'.uV2eYG_root',
-		'.hHd-Xa_root .hHd-Xa_footArea, .hHd-Xa_root .hHd-Xa_settingsArea, .hHd-Xa_root .hHd-Xa_footerActions'
+		SIDEBAR_PROBE_SEL
 	]);
 	const run = async (hostCss) => {
 		const hostSheet = makeEl();
@@ -4912,7 +4944,7 @@ test('drift probe (T3): a group the HOST CSS still owns is notMounted, not drift
 		'.qDHVXG_fade'
 	];
 	const MOUNTED = new Set([
-		'.hHd-Xa_root .hHd-Xa_footArea, .hHd-Xa_root .hHd-Xa_settingsArea, .hHd-Xa_root .hHd-Xa_footerActions',
+		SIDEBAR_PROBE_SEL,
 		// Issue #96/#97: the two hash-free anchors mount on any ordinary page (the
 		// AppFrame is the app root, the session-list fade ships with the list), so
 		// this fixture mounts them too — their classification path when they are
@@ -4972,7 +5004,7 @@ test('drift probe (T3): a surface mounting late leaves the notMounted pool throu
 	ourSheet.textContent = '.uV2eYG_root{backdrop-filter:blur(1px)}';
 	const LATE_GROUP = '.lXshSW_root, ._7yHdaG_panel';
 	const MOUNTED = new Set([
-		'.hHd-Xa_root .hHd-Xa_footArea, .hHd-Xa_root .hHd-Xa_settingsArea, .hHd-Xa_root .hHd-Xa_footerActions',
+		SIDEBAR_PROBE_SEL,
 		// Issue #96/#97: the two hash-free anchors mount on any ordinary page (the
 		// AppFrame is the app root, the session-list fade ships with the list), so
 		// this fixture mounts them too — their classification path when they are
@@ -5071,7 +5103,7 @@ test('drift probe (R-2): a surface mounting AFTER the terminal verdict retracts 
 	const observers = [];
 	const doc = {
 		body: makeEl(), createElement: () => makeEl(), createTextNode: () => ({}),
-		querySelector: (sel) => (sel.startsWith('.hHd-Xa_root') && !mounted ? null : { matched: true }),
+		querySelector: (sel) => (sel === SIDEBAR_PROBE_SEL && !mounted ? null : { matched: true }),
 		querySelectorAll: () => [], head: makeEl()
 	};
 	class FakeMO {
@@ -5085,7 +5117,7 @@ test('drift probe (R-2): a surface mounting AFTER the terminal verdict retracts 
 	await settleDrift(h.window);
 	const t0 = h.window.__DSH_DREAM_SKIN_STATUS__;
 	assert.equal(t0.anchors.pending, false, 'terminal verdict reached');
-	assert.deepEqual(t0.anchors.drifted, ['.hHd-Xa_root .hHd-Xa_footArea, .hHd-Xa_root .hHd-Xa_settingsArea, .hHd-Xa_root .hHd-Xa_footerActions'], 'group missing at terminal is named');
+	assert.deepEqual(t0.anchors.drifted, [SIDEBAR_PROBE_SEL], 'group missing at terminal is named');
 	assert.equal(warns.filter((w) => w.includes('drifted')).length, 1, 'terminal drift warns exactly once');
 	assert.ok(observers.length >= 1, 'late-correction observer armed after a drifted terminal');
 	// User opens settings "a minute later": the surface mounts, DOM mutates.
@@ -5119,7 +5151,7 @@ test('drift probe (S-3): fiber unload disarms the late-correction observer and f
 	let mounted = false;
 	const doc = {
 		body: makeEl(), createElement: () => makeEl(), createTextNode: () => ({}),
-		querySelector: (sel) => (((sel.startsWith('.hHd-Xa_root') || sel === '.uV2eYG_root') && !mounted) ? null : { matched: true }),
+		querySelector: (sel) => (((sel === SIDEBAR_PROBE_SEL || sel === '.uV2eYG_root') && !mounted) ? null : { matched: true }),
 		querySelectorAll: () => [], head: makeEl()
 	};
 	const observers = [];
@@ -5315,7 +5347,7 @@ test('drift probe (A-1): a late-mounting surface clears itself from the drifted 
 	const doc = {
 		body: makeEl(), createElement: () => makeEl(), createTextNode: () => ({}),
 		querySelector: (sel) => {
-			if (sel.startsWith('.hHd-Xa_root') && Date.now() - start < 60) return null;
+			if (sel === SIDEBAR_PROBE_SEL && Date.now() - start < 60) return null;
 			return { matched: true };
 		},
 		querySelectorAll: () => [], head: makeEl()

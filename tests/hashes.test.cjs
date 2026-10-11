@@ -207,7 +207,12 @@ test("mutation #92.1: putting the dead hash back in the comment reddens the gate
 });
 
 test("mutation #92.2: a hash the host DOES have is allowed — this is not a blanket ban", () => {
-	const line = "[data-sidebar] .hHd-Xa_footArea { background: transparent }";
+	// Roadmap A1 removed `hHd-Xa` from the shipped surface, so the frozen census no
+	// longer carries that base and using it here would test the WRONG thing (an
+	// unmeasured base is reported, not allowed). `uV2eYG` is a base we still ship and
+	// the host still has — the claim under test is 'a hash the corpus vouches for stays
+	// green', not 'this particular sidebar hash'.
+	const line = "[data-sidebar] .uV2eYG_footArea { background: transparent }";
 	const rows = scanHashLiterals({ files: scanTargets(), readFile: injecting("lib/client.js", line) });
 	assert.deepEqual(
 		checkHashLiterals({ ...live(), rows }).problems,

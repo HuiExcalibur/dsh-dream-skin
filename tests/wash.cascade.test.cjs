@@ -37,7 +37,7 @@ const {
 	DESKTOP_SKINS, DESKTOP_SWEEP, DESKTOP_SHELL_CSS, DESKTOP_SHELL_SOURCE, browserAttempts,
 	probeBrowser, gradeStage, runChrome, environmentError,
 	measureCoexist, buildCoexistFixture, checkCoexistReadings, COEXIST_CHECKS,
-	hostFadeClasses, hostLayoutClasses, pluginFadeRule, SKIN_CENTER_PKG,
+	hostFadeClasses, hostLayoutClasses, pluginFadeRule, SKIN_CENTER_PKG, hostSideFootRules, walkCssBlocks, SIDE_WATCHED_PROPS,
 	cornerTokens, cssColor, CORNER_SKIN, CORNER_ALPHA
 } = require('../scripts/wash-cascade.cjs');
 
@@ -318,8 +318,8 @@ test('the verdict table claims every reading, and each claim is in a named issue
 	// split-brain this table exists to prevent, in a new costume.
 	const groups = [...new Set(WASH_CHECKS.map((c) => c.group))].sort();
 	assert.deepEqual(groups, [...WASH_GROUPS].sort(), 'every declared group has a check, and every check sits in a declared group');
-	assert.deepEqual(groups, ['corner', 'desktop', 'fade'],
-		'the groups are #96 (corner: the frame, its content corner and its caption ::before), #97 (fade) and #99 (desktop) — a new issue adds a group HERE');
+	assert.deepEqual(groups, ['corner', 'desktop', 'fade', 'side'],
+		'the groups are #96 (corner: the frame, its content corner and its caption ::before), #97 (fade), #99 (desktop) and A1 (side, the sidebar foot plane) — a new issue adds a group HERE');
 	for (const check of WASH_CHECKS) {
 		assert.ok(WASH_GROUPS.includes(check.group), `${check.id} claims an unknown group ${check.group}`);
 		assert.ok(typeof check.ok === 'function' && check.msg, `${check.id} needs both a predicate and a message`);
@@ -553,6 +553,11 @@ test('checkReadings is falsifiable, and reads the state each check means', () =>
 const GROUP_SAMPLE_ANCHOR = {
 	corner: 'function fixtureHtml(parts) {',
 	fade: 'function fixtureHtml(parts) {',
+	// Roadmap A1 samples off the SAME page and the same `sample(label)`, so it shares the
+	// corner/fade anchor. Registering it is not ceremony: this table is what makes a new
+	// group's fields checked rather than skipped, and the guard reddened when `side` was
+	// added to WASH_GROUPS without a row here.
+	side: 'function fixtureHtml(parts) {',
 	desktop: 'const DESKTOP_PAGE_SCRIPT = `'
 };
 const CASCADE_SRC = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'wash-cascade.cjs'), 'utf8');
@@ -1255,4 +1260,251 @@ test('mutation: with our fade declaration gone the coexistence band comes back',
 	const byState = Object.fromEntries(r.readings.map((x) => [x.state, x]));
 	assert.match(byState.wash.realBg, /linear-gradient/, 'without our declaration the host band survives our own wash');
 	assert.equal(byState.coexist.probeBg, 'rgba(0, 0, 0, 0)', 'their lane still wins the probe — the attribution was not reading our rule');
+});
+
+// Strip ONE declaration, but ONLY from the two foot-family rules. The sheet carries 13
+// `background:` declarations and two `box-shadow:` ones, so the shared `stripDeclaration()`
+// helper would delete far more than "this plane loses this property" — and the red set below
+// only reads the `side` group, so a global strip would leave a mutation whose scope is not the
+// scope of the claim it is supposed to prove.
+function stripInFootRules(css, prop) {
+	const needle = prop.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const re = /([^{}]+)\{([^{}]*)\}/g;
+	const declared = new RegExp('\\n?\\s*' + needle + '\\s*:[^;}]*;', 'g');
+	let out = '';
+	let last = 0;
+	let hits = 0;
+	let m;
+	while ((m = re.exec(css))) {
+		const isFoot = m[1].includes('_footArea') || m[1].includes('_settingsArea') || m[1].includes('_footerActions');
+		let body = m[2];
+		if (isFoot) {
+			hits += (body.match(declared) || []).length;
+			body = body.replace(declared, ';');
+		}
+		out += css.slice(last, m.index) + m[1] + '{' + body + '}';
+		last = m.index + m[0].length;
+	}
+	out += css.slice(last);
+	if (!hits) throw new Error(`declaration ${prop} is not in the foot rules — nothing was mutated`);
+	return out;
+}
+
+test('mutation: the engine proves the sidebar foot readings are caused by our anchors, and a renamed suffix dies loudly', { skip: RUN ? false : skipWhy }, () => {
+	// Four ways the A1 re-anchor can rot, each aimed at ONE joint, and each naming the
+	// check ids that move. The fourth is the one the text gates cannot see at all: if the
+	// host renames the CSS-module key, `[class$="_footArea"]` matches nothing while the
+	// selector is still perfectly present in the sheet, in the probe list, and in every
+	// string assertion in this repository.
+	const redIds = (parts) => {
+		const r = measure({ parts });
+		assert.ok(!r.error, `the mutated probe failed: ${r.error}`);
+		return checkReadings(r.readings, ['side']).map((x) => x.split(':')[0]).sort();
+	};
+	const base = buildFixture();
+	assert.deepEqual(redIds(base), [], 'the shipped sheet must be green on the side group before any mutation');
+
+	// ① / ② drop ONE margin declaration at a time. Each goes red in a different set, so a red
+	//    here names one joint instead of "everything moved" — and the geometry claims move with
+	//    them, because a plane that stops being pulled out visibly stops being flush.
+	const noMarginLeft = { ...base, material: stripInFootRules(base.material, 'margin-left') };
+	assert.notEqual(noMarginLeft.material, base.material, 'mutation ① has to change the sheet');
+	assert.deepEqual(redIds(noMarginLeft),
+		['side-nested-surfaces-align', 'side-padding-compensates-inset', 'side-plane-aligns', 'side-plane-flush-with-host-region'],
+		'without the -4px the foot box and its two nested surfaces stop aligning, the plane is no longer flush with the host region, and the compensation relation breaks');
+
+	const noMarginRight = { ...base, material: stripInFootRules(base.material, 'margin-right') };
+	assert.notEqual(noMarginRight.material, base.material, 'mutation ② has to change the sheet');
+	assert.deepEqual(redIds(noMarginRight),
+		['side-padding-compensates-inset', 'side-plane-aligns-right', 'side-plane-flush-with-host-region'],
+		'the right edge is the half that closes the seam — only its claims and the flush move');
+
+	// ③ un-scope the footerActions anchor: only the decoy moves. This is the reading that
+	//    makes "we do not reach the question card's footer" a measurement rather than a
+	//    paragraph — the unscoped rule is (0,1,0) like the decoy's own and lands later.
+	const src = BUNDLE;
+	const unscoped = src.replace(
+		'const SIDEBAR_FOOTER_ACTIONS_SELECTOR = "[class$=\\"_footArea\\"] [class$=\\"_footerActions\\"]";',
+		'const SIDEBAR_FOOTER_ACTIONS_SELECTOR = "[class$=\\"_footerActions\\"]";'
+	);
+	assert.notEqual(unscoped, src, 'mutation ③ has to change the bundle source');
+	const parts3 = buildFixture({ source: unscoped });
+	assert.deepEqual(redIds({ ...base, material: parts3.material }), ['side-decoy-footer-untouched'],
+		'an unscoped anchor reaches the decoy and touches nothing else — the scoping is load-bearing');
+
+	// ④ the host renames the suffix. Every anchor in the family dies at once, the sheet
+	//    still contains all three selectors, and only the engine notices.
+	const renamed = src.replace(/_footArea/g, '_footRegion');
+	const parts4 = buildFixture({ source: renamed });
+	assert.deepEqual(redIds({ ...base, material: parts4.material }),
+		['side-nested-surfaces-align', 'side-padding-compensates-inset', 'side-plane-aligns', 'side-plane-aligns-right', 'side-plane-flush-with-host-region'],
+		'a renamed host suffix reddens the alignment claims instead of leaving a silently inert rule');
+});
+
+test('mutation: the side group is a CASCADE test, follows the host variable, and records what it cannot see', { skip: RUN ? false : skipWhy }, () => {
+	// Why this file exists at all: the first version of the `side` group put the host's class
+	// NAMES in the page and nothing else. Every reading was then our sheet applied to a bare
+	// div — a page nobody runs. The host really does write
+	// `.<base>_footArea{display:flex;flex-direction:column}`, declares
+	// `--dsh-sidebar-inline-padding` on its own root, and uses the very
+	// `margin-left:-4px / margin-right:calc(-1 * var(…)) / padding-left:4px` convention our rule
+	// copies. And our landmark branch is (0,1,0) — the SAME specificity as the host's own rule
+	// for that element — so the winner is document order, not anything in our bundle.
+	const redIds = (parts) => {
+		const r = measure({ parts });
+		assert.ok(!r.error, `the mutated probe failed: ${r.error}`);
+		return checkReadings(r.readings, ['side']).map((x) => x.split(':')[0]).sort();
+	};
+	const plainOf = (parts) => {
+		const r = measure({ parts });
+		assert.ok(!r.error, `the mutated probe failed: ${r.error}`);
+		return r.readings.find((x) => x.state === 'plain');
+	};
+	const base = buildFixture();
+	assert.ok(base.hostFootRules.includes('.' + base.footClass),
+		`the shipped fixture must carry the host's own rule for the foot plane, got: ${base.hostFootRules.slice(0, 120)}`);
+	assert.ok(/--dsh-sidebar-inline-padding\s*:/.test(base.insetRootRule),
+		'the fixture must load the host rule that DECLARES the inset variable, not just use it');
+	assert.deepEqual(redIds(base), [], 'control: the unmutated side group is green with the host sheet present');
+
+	// ① the host block is replaced by one that never touches the plane. Our readings (margin,
+	//    fill) still say exactly what they said before — only the "is the host even here"
+	//    claim moves. That asymmetry is the point: without this leg a fixture that silently
+	//    drops the host CSS keeps the whole group green.
+	const noHost = { ...base, hostFootRules: `.${base.footClass}{color:rgb(1, 2, 3)}` };
+	assert.notEqual(noHost.hostFootRules, base.hostFootRules, 'mutation ① has to change the host block');
+	assert.equal(plainOf(noHost).footDisplay, 'block', 'with the host rule gone the foot box stops being a flex container');
+	assert.deepEqual(redIds(noHost), ['side-host-foot-css-in-play'],
+		'a fixture missing the host sheet reddens ONLY the host-is-in-play claim — the alignment readings are unchanged, which is exactly why they needed this leg');
+
+	// ② the host is present AND paints the plane harder than we do (same element, higher
+	//    specificity). Only the "our erase wins" claim moves.
+	const stronger = { ...base, hostFootRules: `${base.hostFootRules}\n.${base.footClass}.${base.footClass}{background:rgb(9, 9, 9)}` };
+	assert.notEqual(stronger.hostFootRules, base.hostFootRules, 'mutation ② has to change the host block');
+	assert.equal(plainOf(stronger).footBg, 'rgb(9, 9, 9)', 'a (0,2,0) host rule outranks our (0,1,0) landmark branch — the erase is not self-executing');
+	assert.deepEqual(redIds(stronger), ['side-erase-wins-over-host-sheet'],
+		'the canary reddens on its own, and the host-is-in-play leg stays green because the host block really is loaded');
+
+	// ③ and ④ are the pair that separates a RELATIONAL claim from a typed literal. The host owns
+	//    `--dsh-sidebar-inline-padding`; our rule reads it. If the gate were comparing to the
+	//    string "-12px", it would stay green while the host moves to 9px and our plane silently
+	//    3px out of date — so: move the HOST's value and require green (both sides follow), then
+	//    hard-code OURS and require red (the drift the relational form exists to catch).
+	const hostMoves = { ...base, insetRootRule: base.insetRootRule.replace('--dsh-sidebar-inline-padding:12px', '--dsh-sidebar-inline-padding:9px') };
+	assert.notEqual(hostMoves.insetRootRule, base.insetRootRule, 'mutation ③ has to change the host declaration');
+	const moved = plainOf(hostMoves);
+	assert.equal(moved.insetVarOnFoot, '9px', `the foot box must read the HOST value, got ${moved.insetVarOnFoot}`);
+	assert.equal(moved.footMarginRight, '-9px', 'our rule follows the host variable');
+	assert.deepEqual(redIds(hostMoves), [],
+		'when the host moves its inset, our claims must ALL stay green — a check that reddens here is comparing to a literal we typed, not to the host');
+
+	const hardcoded = { ...hostMoves, material: base.material.replace('margin-right: calc(-1 * var(--dsh-sidebar-inline-padding, 12px));', 'margin-right: -12px;') };
+	assert.notEqual(hardcoded.material, base.material, 'mutation ④ has to change the sheet');
+	assert.deepEqual(redIds(hardcoded),
+		['side-padding-compensates-inset', 'side-plane-aligns-right', 'side-plane-flush-with-host-region'],
+		'a hard-coded -12px while the host says 9px must redden exactly the right-edge claims — this is the drift the relational form catches and the literal form never would');
+
+	// ⑤ the padding pair, made observable the same way: it has no reading of its own in the
+	//    first version, so deleting it changed nothing the gate could see.
+	for (const prop of ['padding-left', 'padding-right']) {
+		const stripped = { ...base, material: stripInFootRules(base.material, prop) };
+		assert.notEqual(stripped.material, base.material, `mutation ⑤ has to change the sheet (${prop})`);
+		assert.deepEqual(redIds(stripped), ['side-padding-compensates-inset'],
+			`dropping ${prop} breaks the compensation relation and nothing else — the bleed would push content off the edge with no gate noticing`);
+	}
+
+	// ⑥ DOCUMENTED NON-COVERAGE, kept as a test so the next reader does not mistake the canary
+	//    above for coverage of the erase. The host writes no background / box-shadow / border /
+	//    width for these three classes (measured on both corpora), so with today's host CSS those
+	//    four declarations can be deleted and NOTHING reddens: the values were already the ones
+	//    the erase asks for. Recorded, not papered over — the erase half is pinned by craft
+	//    (`side-foot-hash-free` whitelist + count) and by the bundle string assertions, and it is
+	//    only the ENGINE's business once something competes, which is what leg ② proves.
+	for (const prop of ['background', 'box-shadow', 'border', 'width']) {
+		const stripped = { ...base, material: stripInFootRules(base.material, prop) };
+		assert.notEqual(stripped.material, base.material, `mutation ⑥ has to change the sheet (${prop})`);
+		assert.deepEqual(redIds(stripped), [],
+			`${prop}: NOT covered by the engine group today (nothing competes for it on this plane). If a host build starts painting it, leg ② is the joint that must turn red — do not "fix" this line by weakening leg ②, and do not count this as verified pixels.`);
+	}
+});
+
+test('hostSideFootRules accounts for EVERY foot rule the host writes, replayed or skipped', { skip: RUN ? false : skipWhy }, () => {
+	// The shape gate on this extractor cannot see QUANTITY: emit one of the host's foot blocks
+	// and the page still looks like a cascade test. So the ledger is recomputed here from the
+	// host corpus with an independent walk, and the extractor owes every selector in it to one
+	// of two columns — replayed, or skipped-and-named. Anything else is a page nobody runs.
+	const base = buildFixture();
+	const toks = [base.footClass, base.settingsClass, base.actionsClass];
+	const classes = { footClass: base.footClass, settingsClass: base.settingsClass, actionsClass: base.actionsClass };
+	const blocks = walkCssBlocks(base.sidebar);
+	const touching = blocks
+		.map((b) => ({ conditional: b.conditional, sel: b.sel.split(',').map((s) => s.trim()).filter((s) => toks.some((t) => s.includes('.' + t))), props: b.body }))
+		.filter((b) => b.sel.length);
+	const unconditional = touching.filter((b) => !b.conditional).reduce((n, b) => n + b.sel.length, 0);
+	const conditional = touching.filter((b) => b.conditional).reduce((n, b) => n + b.sel.length, 0);
+	assert.ok(unconditional >= 6, `expected the host to carry several unconditional foot selectors, read ${unconditional} — the corpus changed shape`);
+	const replayed = touching.length
+		? walkCssBlocks(base.hostFootRules).reduce((n, b) => n + b.sel.split(',').filter((s) => toks.some((t) => s.includes('.' + t))).length, 0)
+		: 0;
+	assert.equal(replayed, unconditional,
+		`the fixture replays ${replayed} of the ${unconditional} unconditional foot selectors — silently fewer is silently a different cascade`);
+	assert.equal(base.hostFootConditionalSkipped.length, conditional,
+		`${conditional} conditional foot selectors in the corpus vs ${base.hostFootConditionalSkipped.length} recorded skips`);
+	// A skip is only honest while it does not carry anything the checks read.
+	for (const s of base.hostFootConditionalSkipped) {
+		assert.ok(s.props.every((p) => !SIDE_WATCHED_PROPS.some((w) => p === w || p.startsWith(w + '-'))),
+			`a skipped conditional rule carries a watched property (${s.props.join(', ')}) — the group would then be measuring an unconditional page: ${s.selector}`);
+	}
+
+	// Same rule under a condition, with a property the group reads, must REFUSE the build.
+	assert.throws(() => hostSideFootRules(`@media (max-width:900px){.${base.footClass}{margin-left:-8px}}`, classes),
+		/cannot express/, 'a conditional margin the fixture cannot express must refuse, not be replayed unconditionally');
+	assert.throws(() => hostSideFootRules(`.${base.footClass},div.${base.settingsClass}{color:red}`, classes),
+		/cannot replay/, 'a partial drop inside a selector list must refuse too — keeping one of two is the silent case');
+	const control = hostSideFootRules(`.${base.footClass}{display:flex}`, classes);
+	assert.ok(control.rules.includes('.' + base.footClass), 'control: a plain rule still replays');
+	assert.deepEqual(control.skipped, [], 'control: nothing was skipped in the plain case');
+});
+
+test('the fixture refuses CSS that could close a style element', { skip: RUN ? false : skipWhy }, () => {
+	// Four of the interpolated strings are not ours (two are read from the host bundle). A `</`
+	// in any of them ends the sheet early: the readings still come back as plausible values, but
+	// from a page that is not the one the gate believes it built.
+	const base = buildFixture();
+	assert.doesNotThrow(() => fixtureHtml(base), 'control: the real fixture must still build');
+	for (const key of ['material', 'hostFootRules', 'insetRootRule', 'insetRegionRule']) {
+		const poisoned = { ...base, [key]: String(base[key]) + '/*a*/.b{content:"</style>"}' };
+		assert.throws(() => fixtureHtml(poisoned), /cannot inject/,
+			`${key} carrying "</" must refuse the build instead of measuring a truncated document`);
+	}
+});
+
+test('the flush claim is an observation about two boxes, and refuses a page where either is absent', () => {
+	// ADJUDICATION-10.12.0 CP2. `footRectLeft === regionRectLeft` is a RELATION, and relations
+	// have a hole equality gates do not: `MISSING === MISSING` is true. A page where the host's
+	// region box was never placed would therefore satisfy the claim about a plane it does not
+	// have. The other legs of the group would catch that too (they compare against `-4px`), but
+	// a check must not depend on a sibling for its own precondition — that is how "the group is
+	// green" quietly becomes "some check somewhere is green".
+	const flush = WASH_CHECKS.find((c) => c.id === 'side-plane-flush-with-host-region');
+	assert.ok(flush, 'the flush claim must still be registered in WASH_CHECKS');
+	const box = (foot, region) => ({
+		footRectLeft: foot[0], footRectRight: foot[1], regionRectLeft: region[0], regionRectRight: region[1],
+		footMarginLeft: foot[2], footMarginRight: foot[3], regionMarginLeft: region[2], regionMarginRight: region[3],
+	});
+	const aligned = box(['16px', '746px', '-4px', '-12px'], ['16px', '746px', '-4px', '-12px']);
+	const bothGone = box(['MISSING', 'MISSING', 'MISSING', 'MISSING'], ['MISSING', 'MISSING', 'MISSING', 'MISSING']);
+	const onlyRegion = box(['16px', '746px', '-4px', '-12px'], ['MISSING', 'MISSING', 'MISSING', 'MISSING']);
+	const drift = box(['16px', '750px', '-4px', '-12px'], ['16px', '746px', '-4px', '-12px']);
+	assert.equal(flush.ok(aligned), true, 'control: two real boxes on the same lines must pass');
+	assert.equal(flush.ok(bothGone), false, 'double absence must NOT satisfy a claim about flush edges');
+	assert.equal(flush.ok(onlyRegion), false, 'a missing comparison box must not be read as "nothing to check"');
+	assert.equal(flush.ok(drift), false, 'a 4px difference in the right edge is the defect this check exists for');
+	// And the same hole exists on the relational right-edge claim: an empty variable reading
+	// must not be treated as a pass.
+	const right = WASH_CHECKS.find((c) => c.id === 'side-plane-aligns-right');
+	assert.ok(right, 'the right-edge claim must still be registered');
+	assert.equal(right.ok({ insetVarOnFoot: '', footMarginRight: '' }), false, 'an unresolvable variable must redden, not compare empty to empty');
+	assert.equal(right.ok({ insetVarOnFoot: 'MISSING', footMarginRight: 'MISSING' }), false, 'double MISSING must redden');
+	assert.equal(right.ok({ insetVarOnFoot: '12px', footMarginRight: '-12px' }), true, 'control: the host value with our bleed passes');
 });

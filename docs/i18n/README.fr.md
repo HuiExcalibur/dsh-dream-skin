@@ -72,7 +72,7 @@ Les deux voies sont superposables et indépendantes : un preset décide du « ma
   </tr>
 </table>
 
-> Clair / sombre : `mist`, `ivory` et `rose` sont des thèmes clairs, les autres sont sombres. Les presets ne vous plaisent pas ? Poursuivez avec la **Voie n°2**. Chaque preset embarque ses propres réglages par défaut (opacité/flou du halo, transparence de la barre latérale et du composer, opacité des dialogues, matériau verre) : changer de thème réajuste toutes les valeurs que vous n’avez pas définies vous-même, et les 8 presets passent 228 contrôles qualité mesurables (217 palette + 11 métier) (échelle d’élévation OKLCH, contraste WCAG 2.1 + APCA, séparation des teintes de signal, distinction entre presets).
+> Clair / sombre : `mist`, `ivory` et `rose` sont des thèmes clairs, les autres sont sombres. Les presets ne vous plaisent pas ? Poursuivez avec la **Voie n°2**. Chaque preset embarque ses propres réglages par défaut (opacité/flou du halo, transparence de la barre latérale et du composer, opacité des dialogues, matériau verre) : changer de thème réajuste toutes les valeurs que vous n’avez pas définies vous-même, et les 8 presets passent 229 contrôles qualité mesurables (217 palette + 12 métier) (échelle d’élévation OKLCH, contraste WCAG 2.1 + APCA, séparation des teintes de signal, distinction entre presets).
 
 ---
 

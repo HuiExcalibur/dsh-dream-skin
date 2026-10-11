@@ -53,12 +53,30 @@ const CLIENT = path.join(ROOT, 'lib', 'client.js');
 function liveProbeGroups(source) {
 	const body = source.match(/const MATERIAL_SELECTOR_PROBES = \[([\s\S]*?)\n\t\t\];/);
 	if (!body) throw new Error('MATERIAL_SELECTOR_PROBES is gone or reshaped — the probed count cannot be derived');
-	const entries = body[1]
-		.split('\n')
-		.map((l) => l.trim())
-		.filter((l) => /^"(?:[^"\\]|\\.)*",?$|^[A-Za-z_][\w.]*,?$/.test(l));
-	if (entries.length < 6) throw new Error(`probe-group parse found only ${entries.length} entries — the array formatting changed`);
-	return entries.length;
+	// Count ARRAY ELEMENTS. The earlier rule kept only lines that were a whole quoted
+	// string or a bare identifier, which silently dropped a group written as a
+	// concatenation of selector constants — Roadmap A1's sidebar group is exactly that
+	// (`SIDEBAR_FOOT_SELECTOR + ", " + …`). The bundle probed 8, this read 7, and the
+	// `probed:` field reddened over a parser limitation instead of a fact about the page.
+	// Comments are dropped line-wise first (the array puts every comment on its own line).
+	const code = body[1].split('\n').map((l) => l.trim()).filter((l) => l !== '' && !l.startsWith('//')).join(' ');
+	let depth = 0, quote = null, elements = 0, sawContent = false;
+	for (let i = 0; i < code.length; i += 1) {
+		const ch = code[i];
+		if (quote !== null) {
+			if (ch === '\\') i += 1;
+			else if (ch === quote) quote = null;
+			continue;
+		}
+		if (ch === '"' || ch === "'" || ch === '`') { quote = ch; sawContent = true; continue; }
+		if (ch === '(' || ch === '[') depth += 1;
+		else if (ch === ')' || ch === ']') depth -= 1;
+		else if (ch === ',' && depth === 0) { elements += 1; sawContent = false; continue; }
+		if (!/\s/.test(ch)) sawContent = true;
+	}
+	const entries = elements + (sawContent ? 1 : 0);
+	if (entries < 6) throw new Error(`probe-group parse found only ${entries} entries — the array formatting changed`);
+	return entries;
 }
 
 /** Call the audits. Nothing here is a literal that could drift. */
@@ -146,9 +164,9 @@ function liveSuiteCount(files = null, dir = null) {
 const CLAIM_SITES = [
 	{ label: 'README.md 皮肤段', file: 'README.md', marker: '可测质量门', needs: ['total', 'palette', 'craft'] },
 	{
-		label: 'README.md 10.10.0 版本块',
+		label: 'README.md 10.12.0 版本块',
 		file: 'README.md',
-		scope: { from: '**版本 10.10.0', until: '**版本 10.9.3' },
+		scope: { from: '**版本 10.12.0', until: '**版本 10.10.0' },
 		marker: '回归门',
 		needs: ['suite']
 	},
@@ -168,7 +186,7 @@ const CLAIM_SITES = [
 		// of scope on purpose — same boundary the header comment draws.
 		label: 'CHANGELOG.md 头版块',
 		file: 'CHANGELOG.md',
-		scope: { from: '## [10.10.0]', until: '## [10.9.3]' },
+		scope: { from: '## [10.12.0]', until: '## [10.10.0]' },
 		marker: '质量审计',
 		needs: ['total', 'palette', 'craft']
 	},
@@ -211,10 +229,15 @@ const intsIn = (text) => (text.match(/\d+/g) || []).map(Number);
 function matchingLines(text, site) {
 	let lines = text.split('\n');
 	if (site.scope) {
-		const from = lines.findIndex((l) => l.includes(site.scope.from));
+		// Scope markers are matched at LINE START, not by "this string occurs somewhere in the
+		// line". Release prose can and does quote the next heading (`## [10.10.0]` written inside
+		// a sentence about a heading that went missing), and an includes() boundary then closes
+		// the block at that sentence — every claim below it comes back as "the claim was
+		// deleted". That accident is in this round's CHANGELOG, so the boundary is anchored.
+		const from = lines.findIndex((l) => l.startsWith(site.scope.from));
 		if (from < 0) return null;
 		const until = site.scope.until
-			? lines.findIndex((l, i) => i > from && l.includes(site.scope.until))
+			? lines.findIndex((l, i) => i > from && l.startsWith(site.scope.until))
 			: -1;
 		lines = lines.slice(from, until < 0 ? lines.length : until);
 	}
@@ -405,4 +428,114 @@ test('guard: a deleted claim site is a failure, not a pass', () => {
 
 	const control = numberProblems([scoped], readReal);
 	assert.deepEqual(control, [], 'control: the real tree must still satisfy a single-site check');
+});
+
+// ---------------------------------------------------------------------------
+// the CHANGELOG's own structure: one release block per version
+// ---------------------------------------------------------------------------
+
+const CN_NUMERAL = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 };
+
+// Blocks whose `### ` titles are numbered 一、二、三… restart at 一 for EVERY release.
+// A `## [x.y.z]` heading that goes missing does not delete any content: the previous
+// release's whole section just becomes a continuation of the block above, so its 一、
+// arrives after its 九、. That is the only visible fingerprint, and it is the accident
+// this repository actually made while writing 10.12.0 (the 10.10.0 heading was
+// overwritten, and the whole suite plus 12 craft gates stayed green with a published
+// release missing from the changelog's table of contents).
+function changelogProblems(text) {
+	const problems = [];
+	let block = '(preamble)';
+	let last = 0;
+	for (const line of text.split('\n')) {
+		const h = line.match(/^## \[([^\]]+)\]/);
+		if (h) { block = h[1]; last = 0; continue; }
+		const s = line.match(/^### ([一二三四五六七八九十])、/);
+		if (!s) continue;
+		const n = CN_NUMERAL[s[1]];
+		// `last` is assigned on EVERY numbered subsection. Skipping the first one instead would
+		// leave it at 0 forever and this function would report nothing for any file — which is
+		// exactly how this gate was written the first time, and the mutation leg below is what
+		// said so.
+		if (last !== 0 && n <= last) {
+			problems.push(`${block}: subsection counter came back to ${s[1]} after ${last} — `
+				+ 'either a numbered subsection was reordered, or the `## [..]` heading above this section is missing');
+		}
+		last = n;
+	}
+	return problems;
+}
+
+test('the CHANGELOG carries one release block per version, and losing a heading reddens it', () => {
+	const real = readReal('CHANGELOG.md');
+	assert.deepEqual(changelogProblems(real), [], 'control: the shipped CHANGELOG must satisfy its own heading invariant');
+
+	// The newest block must be the version we are about to ship. Restated from package.json
+	// rather than typed here: a literal would be the second copy of the number.
+	const pkgVersion = JSON.parse(readReal('package.json')).version;
+	const top = real.match(/^## \[([^\]]+)\]/m);
+	assert.ok(top, 'the CHANGELOG must open with a `## [x.y.z]` release block');
+	assert.equal(top[1], pkgVersion,
+		`the newest release block is "${top[1]}" but this tree ships ${pkgVersion} — the new section was never added`);
+
+	// Mutation, derived from the file rather than from a remembered version: delete the heading
+	// of every numbered block in turn. The two blocks are caught by DIFFERENT legs, and which
+	// leg catches which is part of the claim — a loop that only asserts "something reddened"
+	// would not notice if one of the two legs were deleted.
+	const numbered = [];
+	let current = null;
+	for (const line of real.split('\n')) {
+		const h = line.match(/^## \[([^\]]+)\][^\n]*$/);
+		if (h) { current = { heading: h[0], numbered: false }; numbered.push(current); continue; }
+		if (current && /^### 一、/.test(line)) current.numbered = true;
+	}
+	const targets = numbered.filter((b) => b.numbered);
+	assert.ok(targets.length >= 2,
+		`expected at least the two newest numbered release blocks to mutate, found ${targets.length} — this check went vacuous`);
+	targets.forEach((t, i) => {
+		const lost = real.replace(t.heading + '\n\n', '\n');
+		assert.notEqual(lost, real, `mutation: deleting ${t.heading} has to change the file`);
+		const structural = changelogProblems(lost);
+		const topAfter = (lost.match(/^## \[([^\]]+)\]/m) || [null, '(no heading at all)'])[1];
+		const versionMoved = topAfter !== pkgVersion;
+		if (i === 0) {
+			// The newest block has nothing above it to absorb its sections, so its counter still
+			// runs 一..九 cleanly — only the "newest block == package.version" leg can see this one.
+			assert.deepEqual(structural, [],
+				'expected the counter leg NOT to fire on the top block (documented, so the split below stays honest)');
+			assert.ok(versionMoved,
+				`deleting the TOP heading "${t.heading}" moved neither leg: the file would still open on ${pkgVersion}`);
+		} else {
+			assert.ok(structural.length >= 1,
+				`deleting the heading "${t.heading}" left the CHANGELOG green — the block above silently absorbed a whole release`);
+			assert.ok(!versionMoved,
+				'the top block must stay untouched when a lower heading is deleted, or the attribution above is fiction');
+		}
+	});
+
+});
+
+test('a scope boundary is a line start, not a phrase quoted inside the block', () => {
+	// The 10.12.0 prose quotes `## [10.10.0]` while explaining that this heading once went
+	// missing. With an includes() boundary that sentence closed the block and the claim below
+	// it — the 门与账本 line — read as "the claim was deleted". So the block must be bounded by
+	// real headings only.
+	const scoped = CLAIM_SITES.filter((s) => s.scope);
+	assert.ok(scoped.length >= 2,
+		`expected the two scoped headline sites (README + CHANGELOG), found ${scoped.length} — this check went vacuous`);
+	assert.deepEqual(numberProblems(scoped, readReal), [], 'control: the scoped sites must read the real release blocks');
+
+	for (const site of scoped) {
+		const lines = readReal(site.file).split('\n');
+		const from = lines.findIndex((l) => l.startsWith(site.scope.from));
+		assert.ok(from >= 0, `the opening marker "${site.scope.from}" is gone from ${site.file}`);
+		const injected = `本轮正文里引用了 ${site.scope.until} 这一行标题，它是被说起的出处，不是版本块的边界`;
+		const withQuote = [...lines.slice(0, from + 1), '', injected, ...lines.slice(from + 1)].join('\n');
+		// The leg is only meaningful if that line would have fooled an includes() matcher.
+		assert.ok(injected.includes(site.scope.until) && !injected.startsWith(site.scope.until),
+			'the injected line must contain the closing marker without starting with it, or this tests nothing');
+		const problems = numberProblems([site], (rel) => (rel === site.file ? withQuote : readReal(rel)));
+		assert.deepEqual(problems, [],
+			`a quoted "${site.scope.until}" inside the ${site.label} block must not close the block: ${problems.join('; ')}`);
+	}
 });

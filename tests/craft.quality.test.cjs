@@ -31,7 +31,8 @@ const CHECK_NAMES = [
 	'layout-neutral',
 	'blur-derived',
 	'wash-frame-flattened',
-	'wash-fade-neutralised'
+	'wash-fade-neutralised',
+	'side-foot-hash-free'
 ];
 
 const checkNamed = (report, name) => report.checks.find((c) => c.name === name);
@@ -144,6 +145,31 @@ test('mutation: putting the fade back on a build hash reddens wash-fade-neutrali
 		assert.equal(c.pass, false, `${label}: fade gate can fail — ${c.detail}`);
 	}
 	assert.equal(checkNamed(auditCraft(CODE), 'wash-fade-neutralised').pass, true, '…and passes on the shipped sheet');
+});
+
+test('mutation: each way the sidebar foot plane could rot reddens side-foot-hash-free', () => {
+	// Roadmap A1. Four different failures, and a gate that catches only one of them is a
+	// gate that will be re-shaped by the next one. The first pair is the original defect:
+	// a hash anchor matches nothing on any host whose hash differs, and every string-level
+	// assertion in this repository still calls it present.
+	const FOOT = 'const SIDEBAR_FOOT_SELECTOR = "[class$=\\"_footArea\\"]";';
+	const ACTIONS = 'const SIDEBAR_FOOTER_ACTIONS_SELECTOR = "[class$=\\"_footArea\\"] [class$=\\"_footerActions\\"]";';
+	for (const [label, pair] of [
+		['hash anchor back (the A1 defect itself)', [FOOT, 'const SIDEBAR_FOOT_SELECTOR = ".hHd-Xa_footArea";']],
+		['nested surface un-scoped (would reach the question card)', [ACTIONS, 'const SIDEBAR_FOOTER_ACTIONS_SELECTOR = "[class$=\\"_footerActions\\"]";']],
+		['a property nobody approved', ['"  margin-left: -4px;",', '"  margin-left: -4px;", "  transform: translateY(-9px);",']],
+		// The shape gate cannot see COUNT, and 10.10.0 learned that the hard way: a single
+		// rule is a legitimate shape, so only the "exactly two" claim reddens a third half
+		// creeping in. The plant closes the alignment rule and opens a legal one in its
+		// place, so NOTHING else about the sheet changes — the only new fact is the count.
+		['a third foot rule nobody decided', ['"  padding-left: 4px;",', '"  padding-left: 4px;", "}", SIDEBAR_FOOT_SELECTOR + " {", "  width: auto;",']]
+	]) {
+		const report = auditCraft(mutate(pair));
+		const c = checkNamed(report, 'side-foot-hash-free');
+		assert.equal(c.pass, false, `${label}: the foot gate can fail — ${c.detail}`);
+	}
+	const shipped = checkNamed(auditCraft(CODE), 'side-foot-hash-free');
+	assert.equal(shipped.pass, true, '…and passes on the shipped sheet — ' + shipped.detail);
 });
 
 test('mutation: a HASH-SHAPED fade rule slips past no gate (adversarial review T1)', () => {

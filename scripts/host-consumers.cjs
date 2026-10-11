@@ -99,15 +99,41 @@ function hostRootCandidates() {
 	return out;
 }
 
+/**
+ * A DIRECTORY IS NOT A HOST. `statSync().isDirectory()` was the whole test here,
+ * so an empty `DSH_HOST_ROOT` — a typo, a provisioning step that ran but moved
+ * nothing — was accepted, and the failure surfaced 60 lines later as an ENOENT
+ * on `dsh-client-ui-theme/lib/client.js` inside `measureGap()`. That is the 10.10.0
+ * CI shape exactly (issue #102): "this machine has no host" arrived as "the check
+ * failed", except the check itself was the one throwing, so no skip guard could
+ * catch it. The marker is the ONE file the census cannot be built without, asked
+ * through `themeEntryPath` so this test and the measurement never drift apart.
+ */
+function isHostRoot(dir) {
+	try {
+		return fs.statSync(themeEntryPath(dir)).isFile();
+	} catch {
+		return false;
+	}
+}
+
 function findHostRoot() {
-	for (const candidate of hostRootCandidates()) {
-		try {
-			if (fs.statSync(candidate).isDirectory()) return candidate;
-		} catch {}
+	const candidates = hostRootCandidates();
+	const rejected = [];
+	for (const candidate of candidates) {
+		if (isHostRoot(candidate)) return candidate;
+		let present = false;
+		try { present = fs.statSync(candidate).isDirectory(); } catch {}
+		rejected.push(`${candidate} (${present ? 'a directory, but no ' + THEME_PACKAGE + '/lib/client.js inside' : 'absent'})`);
+		// An explicit override that is not a host must not silently fall through to a
+		// DIFFERENT install: the readings would come from a root nobody named, while the
+		// operator believes they pointed the gate somewhere else.
+		if (candidate === process.env.DSH_HOST_ROOT) break;
 	}
 	throw new Error(
 		'host not found. Set DSH_HOST_ROOT to the directory that contains @deepseek-ai/* packages '
-		+ '(the one with dsh-client-ui-theme inside it), or install dsh globally.'
+		+ '(the one with ' + THEME_PACKAGE + ' inside it), or install dsh globally. Rejected: '
+		+ rejected.join(' | ')
 	);
 }
 
@@ -377,10 +403,13 @@ function build({ quiet = false } = {}) {
 		hashes: {
 			ruler:
 				'A "hash literal" is a CSS-module class name `.<scope>_<suffix>` whose scope mixes case ' +
-				'(`uV2eYG_card`, `hHd-Xa_footActions`, `_7yHdaG_panel`); the mixed-case rule is what excludes ' +
-				'ALL_CAPS constants and snake_case identifiers. The bases are enumerated from our own shipped ' +
-				'surface (lib/ + the published docs, `docs/review/` excluded by name: dated archives whose job ' +
-				'is quoting hashes that no longer exist), then counted in the corpus above.',
+				'(`uV2eYG_card`, `Mbwy4a_footActions`, `_7yHdaG_panel`); the mixed-case rule is what excludes ' +
+				'ALL_CAPS constants and snake_case identifiers. The bases are enumerated from our own tree as ' +
+				'`scanTargets()` defines it — lib/, README.md, CHANGELOG.md, CONTRIBUTING.md, cordis.patch.yml, ' +
+				'docs/i18n, docs/examples, locale (`docs/review/` excluded by name: dated archives whose job is ' +
+				'quoting hashes that no longer exist) — then counted in the corpus above. A base can therefore ' +
+				'enter this table from a DATED QUOTATION rather than a live anchor: the row says what the host ' +
+				'measures, not that we ship the selector.',
 			literals: literals.length,
 			bases: hashTable
 		},

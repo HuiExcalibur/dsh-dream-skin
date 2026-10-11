@@ -311,6 +311,52 @@ function dictLine(source, id, key) {
 	return line ? line[1] : null;
 }
 
+// ── Roadmap D2: the「图片链接」empty state, asserted in the same render harness ─────────────
+// This case lives next to the quota-warning case because that is where the JSX-recording harness
+// is; the seam they share is "what the settings page tells the user", not localStorage. Moving
+// the harness into tests/fixtures/ is a refactor with its own risk and is deliberately NOT
+// smuggled into this round.
+test('the empty image-link tab says why the background is blank, and stays quiet otherwise', async () => {
+	const h = buildSandbox();
+	const nodes = [];
+	const e = h.factory(makeRequire({ nodes }));
+	e.apply(makeApplyContext(h));
+	await flush();
+
+	// The state the report reaches by doing nothing: pick the tab, the wallpaper is absent,
+	// and until D2 the page said nothing about why.
+	let seen = render(h, nodes, 'dream-skin-wallpaper-advanced', { kind: 'url', url: null, gradient: null, history: [] });
+	assert.ok(hasText(seen, 'bg2.urlEmpty'), 'the empty url tab has to explain the blank background');
+
+	// Reverse legs. A hint that cannot switch off is noise, and noise is how the next real
+	// warning gets ignored — the same shape as the storage.hint pair above.
+	seen = render(h, nodes, 'dream-skin-wallpaper-advanced', { kind: 'url', url: 'https://example.com/w.jpg', gradient: null, history: [] });
+	assert.equal(hasText(seen, 'bg2.urlEmpty'), false, 'a tab that HAS a link must not claim it is empty');
+	seen = render(h, nodes, 'dream-skin-wallpaper-advanced', { kind: 'image', url: null, gradient: null, history: [] });
+	assert.equal(hasText(seen, 'bg2.urlEmpty'), false, 'the local-image tab is not this tab and must stay silent');
+
+	// ① the row never renders (silent degradation restored)
+	const never = CODE.replace('kind === "url" && !url ? (0, react_jsx_runtime.jsx)("div", {', 'null ? (0, react_jsx_runtime.jsx)("div", {');
+	assert.notEqual(never, CODE, 'mutation ① has to change the bundle');
+	const h1 = buildSandbox({ code: never });
+	const n1 = [];
+	h1.factory(makeRequire({ nodes: n1 })).apply(makeApplyContext(h1));
+	await flush();
+	assert.equal(hasText(render(h1, n1, 'dream-skin-wallpaper-advanced', { kind: 'url', url: null, gradient: null, history: [] }), 'bg2.urlEmpty'), false,
+		'① with the guard forced false the row disappears — this is the failure the gate exists to see');
+
+	// ② the row always renders (a warning nobody can turn off)
+	const always = CODE.replace('kind === "url" && !url ? (0, react_jsx_runtime.jsx)("div", {', 'kind === "url" ? (0, react_jsx_runtime.jsx)("div", {');
+	assert.notEqual(always, CODE, 'mutation ② has to change the bundle');
+	const h2 = buildSandbox({ code: always });
+	const n2 = [];
+	h2.factory(makeRequire({ nodes: n2 })).apply(makeApplyContext(h2));
+	await flush();
+	assert.ok(hasText(render(h2, n2, 'dream-skin-wallpaper-advanced', { kind: 'url', url: 'https://example.com/w.jpg', gradient: null, history: [] }), 'bg2.urlEmpty'),
+		'② dropping the empty-value guard warns on a healthy tab, which reddens the reverse leg above');
+});
+
+
 // ── B-03 (blue team 10.10.0): the two halves of the quota story that had no gate ──────────────
 
 test('the quota warning reaches the wallpaper row the user reads, in both directions', async () => {

@@ -72,7 +72,7 @@ The two ways are layered and independent: a preset decides the "material &amp; b
   </tr>
 </table>
 
-> Light & dark both covered: `mist`, `ivory` and `rose` are light themes, the rest are dark. Not into presets? See **Way #2** below. Each preset also ships its own tuned defaults (glow opacity / blur, sidebar & composer transparency, dialog opacity, glass material): switching skins retunes every value you have not set yourself, and all 8 presets pass 228 measurable quality gates (217 palette + 11 craft) (OKLCH elevation ladder, WCAG 2.1 + APCA text contrast, signal-hue separation, cross-skin distinctiveness).
+> Light & dark both covered: `mist`, `ivory` and `rose` are light themes, the rest are dark. Not into presets? See **Way #2** below. Each preset also ships its own tuned defaults (glow opacity / blur, sidebar & composer transparency, dialog opacity, glass material): switching skins retunes every value you have not set yourself, and all 8 presets pass 229 measurable quality gates (217 palette + 12 craft) (OKLCH elevation ladder, WCAG 2.1 + APCA text contrast, signal-hue separation, cross-skin distinctiveness).
 
 ---
 

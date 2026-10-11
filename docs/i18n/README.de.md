@@ -72,7 +72,7 @@ Overlay-Ebene (`overrideTokens`), per Klick ein-/ausschaltbar und mit einem Klic
   </tr>
 </table>
 
-> Hell und dunkel im Angebot: `mist`, `ivory` und `rose` sind helle Themes, alle anderen dunkle. Die Presets nicht dein Ding? Weiter geht's mit **Weg #2**. Jedes Preset bringt zudem seine eigenen abgestimmten Standardwerte mit (Glow-Deckkraft/Unschärfe, Transparenz von Sidebar & Eingabe, Dialog-Deckkraft, Glas-Material): Beim Themenwechsel werden alle Werte nachjustiert, die du nicht selbst gesetzt hast — alle 8 Presets bestehen 228 messbare Qualitätsprüfungen (217 Farb- + 11 Handwerksprüfungen) (OKLCH-Elevationsleiter, WCAG 2.1 + APCA-Textkontrast, Signalton-Trennung, Abgrenzung der Presets).
+> Hell und dunkel im Angebot: `mist`, `ivory` und `rose` sind helle Themes, alle anderen dunkle. Die Presets nicht dein Ding? Weiter geht's mit **Weg #2**. Jedes Preset bringt zudem seine eigenen abgestimmten Standardwerte mit (Glow-Deckkraft/Unschärfe, Transparenz von Sidebar & Eingabe, Dialog-Deckkraft, Glas-Material): Beim Themenwechsel werden alle Werte nachjustiert, die du nicht selbst gesetzt hast — alle 8 Presets bestehen 229 messbare Qualitätsprüfungen (217 Farb- + 12 Handwerksprüfungen) (OKLCH-Elevationsleiter, WCAG 2.1 + APCA-Textkontrast, Signalton-Trennung, Abgrenzung der Presets).
 
 ---
 

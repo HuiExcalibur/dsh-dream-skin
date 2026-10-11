@@ -73,7 +73,7 @@ Las dos formas se apilan y son independientes: un preset decide el «material y 
 </table>
 
 > Tonos claros y oscuros cubiertos: `mist`, `ivory` y `rose` son claros, el resto oscuros. ¿No te convencen los
-> presets? Sigue leyendo la **Forma #2**. Cada preset incluye sus propios valores por defecto afinados (opacidad/desenfoque del resplandor, transparencia de la barra lateral y el compositor, opacidad de diálogos, material de vidrio): al cambiar de tema se reajustan todos los valores que no hayas modificado tú, y los 8 presets superan 228 controles de calidad medibles (217 de paleta + 11 de oficio) (escalera de elevación OKLCH, contraste WCAG 2.1 + APCA, separación de tonos de señal, distinción entre presets).
+> presets? Sigue leyendo la **Forma #2**. Cada preset incluye sus propios valores por defecto afinados (opacidad/desenfoque del resplandor, transparencia de la barra lateral y el compositor, opacidad de diálogos, material de vidrio): al cambiar de tema se reajustan todos los valores que no hayas modificado tú, y los 8 presets superan 229 controles de calidad medibles (217 de paleta + 12 de oficio) (escalera de elevación OKLCH, contraste WCAG 2.1 + APCA, separación de tonos de señal, distinción entre presets).
 
 ---
 

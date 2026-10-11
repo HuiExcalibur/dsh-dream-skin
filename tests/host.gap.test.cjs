@@ -143,6 +143,50 @@ test("#88: with the host installed, the frozen census still matches it", (t) => 
 	);
 });
 
+test("the host finder refuses a DSH_HOST_ROOT that is a directory but not a host", () => {
+	// 10.12.0, found by running the whole suite in the CI shape. `findHostRoot()` used to
+	// accept any existing DIRECTORY, so an empty `DSH_HOST_ROOT` (a typo, or a provisioning
+	// step that ran and moved nothing) was returned as if it were an install. The skip
+	// guards in this file and in `hashes.test.cjs` never fired, and the failure arrived 60
+	// lines later as an ENOENT inside `measureGap()` — i.e. "this machine has no host" was
+	// reported as "the check failed", the very exit issue #102 exists to separate.
+	const empty = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "dsh-empty-host-"));
+	const hadOverride = Object.prototype.hasOwnProperty.call(process.env, "DSH_HOST_ROOT");
+	const previous = process.env.DSH_HOST_ROOT;
+	try {
+		process.env.DSH_HOST_ROOT = empty;
+		// ① the empty directory is refused.
+		let message = null;
+		try { findHostRoot(); } catch (e) { message = e.message; }
+		assert.ok(message, "an empty DSH_HOST_ROOT must not resolve to a host root");
+		// ② the refusal names the override AND is the only thing it considered: walking on
+		//    to the machine's global install would hand the caller readings from a root
+		//    nobody pointed at, while the log still says "using DSH_HOST_ROOT".
+		assert.ok(message.includes(empty), `the refusal must name the rejected override, got: ${message}`);
+		assert.ok(/no dsh-client-ui-theme\/lib\/client.js inside/.test(message),
+			`the refusal must say what made it not a host, got: ${message}`);
+		assert.equal(message.split("Rejected: ")[1].split(" | ").length, 1,
+			`an explicit override is refused on its own, without falling through to other candidates: ${message}`);
+		// ③ control — the finder is not simply switched off: with the override gone it either
+		//    resolves to a real install (and that root really has the marker file) or gives
+		//    the named "host not found" error.
+		delete process.env.DSH_HOST_ROOT;
+		let resolved = null;
+		let absent = null;
+		try { resolved = findHostRoot(); } catch (e) { absent = e.message; }
+		if (resolved) {
+			assert.ok(!resolved.includes(empty), `the rejected override came back as a host root: ${resolved}`);
+			fs.statSync(path.join(resolved, "dsh-client-ui-theme", "lib", "client.js"));
+		} else {
+			assert.ok(/host not found/.test(absent), `no host here must still be the named error, got: ${absent}`);
+		}
+	} finally {
+		if (hadOverride) process.env.DSH_HOST_ROOT = previous;
+		else delete process.env.DSH_HOST_ROOT;
+		fs.rmdirSync(empty);
+	}
+});
+
 test("#88: measuring without a usable host THROWS rather than reporting no gaps", () => {
 	// The failure mode this guards: a gap measurement that cannot read the host
 	// returns `{}`, the suite stays green, and nobody learns that the plugin's

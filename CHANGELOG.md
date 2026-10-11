@@ -1,6 +1,110 @@
 # Changelog
 
 记录 `dsh-dream-skin` 的可观变更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。从 `8.28.0` 起，版本号启用**日期式规则**：`M.D.X`（月.日.当日第几个版本），例如 8 月 28 日首个版本 `8.28.0`，当日再发 `8.28.1`，次日则为 `8.29.0`，以取代旧的 `0.4.x` 语义化版本（日期按维护者本地时区 UTC+8 计）。
+
+## [10.12.0] - 2026-10-12
+
+> **Roadmap A1（去哈希类名依赖）+ D2（外链壁纸空值态）。** A1 本来被记成一条**预防性**改动，先测再说之后它变成了缺陷单：那条「左侧栏底部断裂」的修正挂在 npm 宿主的构建哈希基名上，而官方桌面壳同一族表面用的是**另一个基名**，所以这条修正在桌面壳上**从来没有生效过**。合计 **229 项质量门全过**（217 调色 + 12 工艺），全套 `npm test` 461→**480 全绿**。
+
+### 一、先测：两台宿主对同一族表面各用不同基名（这就是缺陷本身）
+
+`_footArea` / `_settingsArea` / `_footerActions` 这一族在两台宿主上逐个基名现数（本轮复核时用两条独立路径各数了一遍：`tests/host.sidefoot.test.cjs` 的 `measureSideFoot`，以及一份 TEMP 里的临时脚本——**数字一致才写进这里**）：
+
+| 语料 | `_footArea` | `_settingsArea` | `_footerActions` |
+|---|---|---|---|
+| npm 实装 `@deepseek-ai/dsh` **`0.2.0-rc.1`**（1022 个 `.css/.js/.mjs`） | 基名 `hHd-Xa`，**6** 处 | `hHd-Xa`，3 处 | `hHd-Xa` 4 处 + **`Mbwy4a` 3 处** |
+| 官方桌面壳 `app.asar`（121,348,951 字节，内含宿主版本字符串 `0.2.0-rc.2`） | 基名 **`_2H3hWW`**，**6** 处 | `_2H3hWW`，3 处 | `_2H3hWW` 4 处 + **`mAtvLq` 3 处** |
+
+决定性的一件事：**`hHd-Xa` 在这个 asar 里出现 0 次**。也就是说 10.10.0 及以前那条 `.hHd-Xa_root .hHd-Xa_footArea, .hHd-Xa_root .hHd-Xa_settingsArea, .hHd-Xa_root .hHd-Xa_footerActions` 在壳上**匹配零个元素**——规则照样在材质表里、字符串断言照样绿、探针照样报 present，只是没有盒子来继承那三条 margin。**issue #97 的病灶原样复现，只是换了一个面**：上一轮是「宿主重掷哈希后规则静默失效」，这一轮是「同一份 CSS Modules 在两个发行渠道里基名不同」。前者是时间维度的漂移，后者是渠道维度的分叉，而两种在页面上的表现一模一样：什么都不发生。
+
+### 二、锚点：哈希无关的后缀 + **强制**后代作用域
+
+三枚常量替代那三条哈希写法（`lib/client.js`，紧跟 `FADE_REPORT_LIMIT` 之后）：`SIDEBAR_FOOT_SELECTOR = [class$="_footArea"]`、`SIDEBAR_SETTINGS_SELECTOR = [class$="_footArea"] [class$="_settingsArea"]`、`SIDEBAR_FOOTER_ACTIONS_SELECTOR = [class$="_footArea"] [class$="_footerActions"]`。材质表里那两条规则（对齐：`width: auto` + 右缘 `calc(-1 * var(--dsh-sidebar-inline-padding, 12px))` + `margin-left: -4px` + 对称填充；抹平：`background: transparent` + 去阴影 + 去描边）选择器改为这三枚的拼接。
+
+**为什么不能写裸后缀**：`_footerActions` 不是这一族独占——npm 上 `dsh-client-ui-user-questions` 自己声明了 `.Mbwy4a_footerActions`（语料 3 处命中、2 处声明），壳上对应的是 `mAtvLq`。裸后缀会去刮提问卡的页脚，正是 issue L1 的形状（我方规则涂了别人的面）。`_settingsArea` 今天不撞，仍然一并要求作用域：作用域是这条规则的**语义**（"这是脚区里的那层面"），不是对当前语料的运气描述。
+
+**为什么作用域能成立也要被钉住**：宿主的 JSX 确实把 `footerActions` 与 `settingsArea` 渲染在 `footArea` 里面——这一条不写死在注释里，由 `hostNestsFootAreas()` 从宿主自己那份 `dsh-client-ui-sidebar/lib/client.js` 现读（按括号深度只读该元素自己的 `children` 数组）。
+
+### 三、门①：宿主侧的宣称由宿主语料回答（`tests/host.sidefoot.test.cjs`，9 条，新文件）
+
+三个纯函数（`ourAnchors()` 从 bundle 反读三枚常量、`measureSideFoot()` 逐后缀按基名分组、`hostNestsFootAreas()` 读嵌套）+ 一个判据表 `checkSideFoot()`，四条**合成语料**腿在任何机器（含 CI，无宿主）上都跑：出现第二枚 `_footArea` 基名 ⇒ 红（地标不再唯一，后代作用域失去依据）；整族改名 ⇒ 每个后缀各红一条；脱掉 `actions` 的作用域 ⇒ 红，且**同一份语料上发货写法必须绿**（否则这条红只是"语料罕见"，不是"作用域要紧"）；宿主不再嵌套 ⇒ 红（后代组合器描述的树没了）。真语料两条腿：本机 npm 实装（`counts._footArea` 必须恰为 1，且嵌套必须读得到）与壳的 `app.asar`（断言**壳的基名与 npm 的不同**——这条正是"从来没有生效过"那句的钉子；两边若哪天共用基名，它会把这句话推翻而不是沉默）。两个出口照 issue #102：**语料缺席是具名 skip / 具名 notice，全部缺席才是红**。
+
+### 四、门②：像素侧由真实引擎回答（`npm run wash:check` 新增 `side` 组，9 判据）
+
+夹具页由宿主自己的 CSS 拼出真的 `_footArea` / `_settingsArea` / `_footerActions` 盒子（类名从 `hostSideFootClasses()` 现读推导，读不到就拒绝构建夹具），并在**同一页**放一个类名同样以 `_footerActions` 结尾、但**不在** footArea 里的诱饵元素（`.fixture-decoy_footerActions`，自带 margin / 填充 / 描边），再放一个**宿主自己写了负 margin 的兄弟** `._regionArea` 当几何对照。九条判据：`side-plane-aligns`（`margin-left` 读到 `-4px`）、`side-nested-surfaces-align`（两层面都通过祖先被命中，后代组合器在真引擎里成立）、`side-decoy-footer-untouched`（诱饵仍 `0px` / `rgb(7, 7, 7)` / `1px`——**作用域是有承重的，不是风格**）、`side-plane-not-wash-gated`（水洗态不得移动这个面，也不得碰到诱饵），以及下面五条**本轮自己抓出来补上的**：`side-host-foot-css-in-play`、`side-erase-wins-over-host-sheet`、`side-plane-aligns-right`、`side-padding-compensates-inset`、`side-plane-flush-with-host-region`。后三条是**关系式**而不是字面量：`side-plane-aligns-right` 要求 `margin-right` 恰等于 `-` × 这个盒子上现读的 `--dsh-sidebar-inline-padding`（实测 `-12px` / `12px`），`side-padding-compensates-inset` 要求左右两条负 margin 各自被同侧 padding 补回来且补的量等于宿主那个变量（实测 `4px`/`-4px`、`12px`/`12px`），`side-plane-flush-with-host-region` 要求这个面的 `getBoundingClientRect()` 左右缘与四条 margin **逐项等于**同页那个我方一条规则都不写的 `_regionArea`。
+
+**补这两条之前，这个组测的不是层叠。** 第一版夹具只把宿主的**类名**放进页面，没有把宿主**给这些类写的规则**放进来。而宿主确实写了（现读，npm 语料与壳的 asar 两边同形）：`.hHd-Xa_footArea{flex-direction:column;flex:none;display:flex}`、`.hHd-Xa_settingsArea,.hHd-Xa_footerActions{flex:none;width:100%;min-width:0}`。于是当时那五条读数全部是"我方规则作用在一张白纸上"的结果，而真实页面上我方那条地标分支是 `(0,1,0)`——**和宿主自己那条 `.hHd-Xa_footArea` 同一特异度**，胜者由**文档顺序**决定，不是由我们 bundle 里的任何东西决定。这是 10.9.2「声明相等≠像素相等」的同族：**夹具相等≠页面相等**，而且比它更隐蔽，因为这里连"读了两层还是三层"都对，读的是一张根本没叠起来的纸。
+
+补法与它自己的两条变异：夹具新增 `<style id="fixture-host-foot">`，内容是经 `hostSideFootRules()` 从宿主侧栏 CSS **逐块抽出**的规则（带 `@media` / `@supports` 条件的块**不复现而是记账**，见本节末段），位置在 `#fixture-chrome` 之后、`#plugin-material` **之前**，复现真实页的顺序；读不到任何一条就**拒绝构建夹具**（不补一份手抄的宿主规则）。`side-host-foot-css-in-play` 读 `display` / `flex-direction`——**这两个属性我方一个字都不写**，所以它们只可能来自宿主；读到 `block` / `row` 就是宿主那块没了、整个组退回"关于一张纸的断言"。`side-erase-wins-over-host-sheet` 读 `footBg` / `footShadow` / `footBorderTop`，它是一条**金丝雀**：宿主哪天给这个面加一层比 `(0,1,0)` 更硬的绘制、或把自己的表排到我方之后，它就会红。两条变异各自只让该红的红：把宿主块换成一条不碰这个面的规则 ⇒ 只有 `['side-host-foot-css-in-play']` 红（其余八条读数一字不动——这正是"没有这条腿就会全绿"的实证）；给宿主块追加一条 `.hHd-Xa_footArea.hHd-Xa_footArea{background:rgb(9, 9, 9)}`（同元素双类 = `(0,2,0)`）⇒ 只有 `['side-erase-wins-over-host-sheet']` 红，且实测 `footBg` 立刻读 `rgb(9, 9, 9)`。**这条门能红，才说明"我们的抹平在那台机器上赢"是量出来的而不是推出来的。**
+
+**第二条欠账：右边缘那条判据当时比的是我方自己的兜底值。** 第一轮对抗评审指出来的一句话缺陷：`side-plane-aligns-right` 读 `footMarginRight` 并要求它等于 `-12px`，而那个 `-12px` 同时出现在**我方规则**的 `var(--dsh-sidebar-inline-padding, 12px)` 兜底里——夹具页上宿主那条声明变量的规则根本不在页面里，于是变量解析到我方写的 `12px`，判据变成"**我方写的数等于我方写的数**"，也就是本仓库记过的老账（手抄常量必须由独立数据源反算）。补法：`hostSideInsets()` 从宿主侧栏 CSS 里现读**声明 `--dsh-sidebar-inline-padding` 的那条规则**和**宿主自己写了负 margin 的 `._regionArea`**，两者都进夹具（读不到任一条就拒绝建页，不补手抄的），并把三条判据改成关系式。它们各自配一条"必须绿"和一条"必须红"的成对变异，这正是关系式与字面量的分水岭：把**宿主**的 `12px` 改成 `9px` ⇒ 整组**全绿**，实测 `insetVarOnFoot` 读 `9px`、`footMarginRight` 读 `-9px`（宿主动了，我方跟着动，判据不动）；在同一个 `9px` 的宿主上把我方那条换成写死的 `margin-right: -12px` ⇒ 恰好 `['side-padding-compensates-inset','side-plane-aligns-right','side-plane-flush-with-host-region']` 三条红。**这就是"写死"今天会造成的漂移形状，而它以前一条门都抓不到。** 顺带现读到一件该记的事：宿主的 `.hHd-Xa_regionArea` 自己写的就是 `margin-left:-4px;margin-right:calc(-1 * var(--dsh-sidebar-inline-padding));padding-left:4px`——我方这组数值不是发明，是**抄了宿主对同列兄弟的既有约定**；这一条同时修正下文「未验证」里"三个数值是我们的设计决定"那句的口径（决定的是"要不要跟齐"，不是那三个数）。
+
+其余四条引擎变异同样各自只让该红的红（**每条都点名翻红的判据 id 集合**，实测）：删掉 `margin-left: -4px` ⇒ `['side-nested-surfaces-align','side-padding-compensates-inset','side-plane-aligns','side-plane-flush-with-host-region']`；删掉 `margin-right: calc(…)` ⇒ `['side-padding-compensates-inset','side-plane-aligns-right','side-plane-flush-with-host-region']`（左、右各删一条，红的集合不同 ⇒ 一次翻红只指一个关节，而不是"什么都动了"）；脱掉 actions 作用域 ⇒ 只有 `['side-decoy-footer-untouched']`；宿主改名（`_footArea`→`_footRegion`）⇒ `['side-nested-surfaces-align','side-padding-compensates-inset','side-plane-aligns','side-plane-aligns-right','side-plane-flush-with-host-region']` 五条全红，**而选择器在表里、在探针列表里、在本仓库每一条字符串断言里都还"在场"**——这一条是文本门永远看不见的失效形状。
+
+**还有一处是"记下来"而不是"修掉了"。** `background` / `box-shadow` / `border` / `width` 这四条声明在今天的宿主 CSS 上**删掉什么都不会红**：宿主对这三个类根本不写这四条属性，而我方抹平要的正是它们的默认值，所以引擎上没有对手。这个事实被写成一条**具名的不覆盖用例**（四条循环，断言 `redIds === []`），而不是留成"看，九判据全绿"的错觉——抹平那一半的钉子是工艺门 `side-foot-hash-free`（白名单 + 恰好两条）和 bundle 字符串断言；**只有当宿主开始抢这个面时它才轮到引擎管**，而那一天该红的是 `side-erase-wins-over-host-sheet`（上面腿②已经证明那个关节能红）。同理，`padding-left` / `padding-right` 两条在补出 `side-padding-compensates-inset` 之前也没有任何读数会动——删掉它们等于让内容贴到列缘，而门一片绿。
+
+**第三轮补的是提取器自己。** 给「选择器被悄悄丢掉」加门时才发现：`hostSideFootRules()` 用的是 `/([^{}]+)\{([^{}]*)\}/` 这种平铺扫描，它**看不见 `@media` 的嵌套**——at-rule 前缀根本没被当成选择器读进来，而是整段跳过，于是里层的脚规则被**当成无条件规则复现**。现读到宿主确实有一条：`@media (prefers-reduced-motion:reduce){… .hHd-Xa_railIn .hHd-Xa_footArea{transition:none;animation:none}}`。今天把它复现出来是无害的（夹具页里没有 `_railIn` 祖先，选择器不匹配；`transition` / `animation` 也不是任何判据读的属性）——**但"无害"是量出来的结论，不是运气**：宿主哪天把 `margin-left` 搬进 `@media`，夹具就会把一条条件规则当永恒规则用，这正是本节开头「夹具相等≠页面相等」的另一条来路。改法是换成带深度的块扫描（`walkCssBlocks()`），条件块一律**不复现、只记账**：实测复现 **9** 条无条件脚选择器、跳过 **1** 条条件块（其属性 `transition` / `animation` 逐条对照判据读的十个属性，碰上一个就**拒绝建页**）。用例里的账目由**测试自己那份独立 walker** 重算再对上，不是复述提取器的返回值。同一轮补的第二件事：夹具把四段 CSS 原文插进 `<style>`，其中两段来自宿主 bundle——一个 `</` 就会提前关掉样式元素，读数照样像样而页面已经不是那张页面；现在这四段各有一处中毒用例要求**拒绝建页**，并同时断言真夹具照旧要能建成（否则这条腿也是空转）。
+
+### 五、门③：工艺门 `side-foot-hash-free`（11 → 12）
+
+候选集**同时**收类名写法与后缀写法（`mentionsFoot()` 两条分支都算），因为只审后缀就是 issue #97 藏身的那道洞——哈希形的兄弟规则可以在门自己看不见的车道里活着。判据四件：每个分支必须有哈希无关分支；两层面必须写在 `_footArea` 作用域之下；任何分支再出现 `.<base>_foot*` 形态直接红（A1 已退役这写法）；规则**恰好两条**。属性走**白名单**（`width` / `margin-right` / `margin-left` / `padding-right` / `padding-left` / `background` / `box-shadow` / `border`）而不是黑名单——10.9.1 的教训是黑名单只拦得住有人想到的名字，`transform` 当时径直走了过去；四腿变异里专门有一条"塞进 `transform: translateY(-9px)`"和一条"多长出一个没人决定过的第三条规则"（形状门兜不住**数量**，只有恰好两条这条兜得住）。
+
+### 六、顺带量到：文件面板一族在两台宿主上都是 0 命中
+
+`.nArs4W_panel` / `_pane` / `_paneContent` / `_workbench` / `_explorerBody` 与 `.bqrRRG_card` 在 npm 语料和壳的 asar 里**各 0 命中**（不是漂移，是整套词汇没了）。现代文件面板在 `dsh-client-ui-sidebar-files`，自带 `data-files-root` / `data-files-body` 稳定戳（本轮现读：两台各 1 处），且它的 root/body/row **自己不画背景**。它原本的意图（右栏与左栏同色）已由 `[data-sidebar-right-panel] [data-dockkit-*]` 那条**宿主稳定戳**规则承担——那条在壳的 asar 里 7 处命中、`data-dockkit` 111 处。所以这一半不是"换锚点"而是"确认已被覆盖 + 把死锚点留在带日期的豁免里"：直接删会让 Roadmap 仍声称支持的 `0.1.x` 线静下来。**Roadmap A1 不销账**：卡片一族（`Mbwy4a_card` / `lXshSW_root` / `_7yHdaG_panel`）仍有押哈希的写法，而验收条件 `anchors.drifted: [] && pending: false` 至今**没有在活页面上读到过**（见文末未验证）。
+
+### 七、D2：选了「图片链接」而框里还没有链接时，界面以前一个字都不说
+
+这一档在 `url` 为空时**不画任何背景**，用户看到的是"设了壁纸却没有壁纸"，而界面没有任何解释。现在补一行条件提示（8 语言各一行 `bg2.urlEmpty`）：说的是**用户此刻该知道的那半**——不是"壁纸被删了"，而是"这一档从来没有值，粘贴链接后点应用"。门是 `client.storage` 的新渲染用例，断言**双向**：`{kind:'url', url:null}` 必须出现该行；`{kind:'url', url:'https://…'}` 与 `{kind:'image', url:null}` 必须不出现。两条源码变异：守卫恒假 ⇒ 该行消失（静默降级复现），丢掉空值判定 ⇒ 有链接也报警（**只钉前一条会放过一个永远显示的警告**）。`t` 走标记函数，所以硬编码中文串在这里过不了。
+
+### 八、探针、census 与三处连带
+
+`MATERIAL_SELECTOR_PROBES` 的侧栏那一组换成三枚常量的拼接，**组数仍是 8**（`docs/desktop-support.md` 的 `probed:` 字段照旧由 `docs.numbers` 现场数数组元素得出）。census 重新生成（`measuredAt: 2026-10-11`）：我方树上的哈希站点 84 → **80**、基名仍是 **9** 枚——`hHd-Xa` 是被本轮的**引文**带回 `hashes.bases` 的（`files: 1 / packages: 1`：宿主确实有这一枚基名，所以旧写法在 npm 那条线上不是死锚点，只是换一个发行渠道就对不上）。**收口时又重生成了一次，读数变成 89**，多出的 9 处全部是本轮**正文里引用**的哈希名（`CHANGELOG.md` 28 / `README.md` 5 / `docs/desktop-support.md` 6 / `docs/design-philosophy.md` 4），不是发货面回来了——发货面 `lib/client.js` 两次都是 **46**。这两个数分开的意义就在这里：这张表管的是"我们说过哪些哈希"，那一列管的是"我们发货哪些哈希"。**另记一条口径**：`measuredAt` 用的是 UTC 日期（`new Date().toISOString()`），而版本号的 `M.D` 用的是 UTC+8——跨过午夜生成 census 会看到" stamp 比版本早一天"，这不是 bug，是两套日期口径，别把它当数据陈旧。真正变了的是发货面：**`lib/client.js` 的哈希站点 61 → 46**（−15，正好是 `hHd-Xa` 那 15 处），这一条才是 A1 这一半的验收读数。`lib/client.js` 里点名该基名的注释已清零（grep 计数 0；它仍留在 `scripts/` 与 `tests/` 的说明文字和变异字符串里，那是门的靶子不是发货面），`tests/hashes.test.cjs` 的第 92.2 条变异因此换成一个仍在表里的基名——**旧哈希现在已经不构成"写回哈希"的证据**，这本身就是 A1 的另一条验收读数。census 的 `ruler` 同时改正：它过去说这张表 "enumerated from our own shipped surface (lib/ + the published docs)"，而 `scanTargets()` 实际还扫 `CHANGELOG.md`——**门的文案把自己的扫描范围写小了**，现在按 scanTargets 逐项点名，并写明"一个基名可能是被日期化的引文带进表的，那一行说的是宿主测到什么，不是我们发货什么"。`client.smoke` 那两条侧栏断言从"字符串在场"改成**条数**（该锚点作为选择器出现恰 2 次）+ 两条"不得有 class-form 锚点"的禁词腿。
+
+### 九、CI 形态复跑抓到的第二实例：共享的 `findHostRoot()` 也把空目录当宿主
+
+新门写完不等于这课学完了。收口时按 10.10.0 的规矩把**整套件**在「这台机器没有宿主」的形态下重跑一遍（`DSH_HOST_ROOT` 指向一个不存在的目录），拿到 **474 定义 = 450 通过 + 21 具名 skip + 3 失败**（这是当时那一次的读数；此后 §四 的层叠补门与本轮末了新加的一道 CHANGELOG 结构门把套件抬到 **480**，收工读数见「门与账本」）——那 3 条红不是新门，是 `tests/hashes.test.cjs` 的 #92 / #94 与 `tests/host.gap.test.cjs` 的 #88，报的都是 `ENOENT: … no-host\dsh-client-ui-theme\lib\client.js`。查下去是同一个病灶的**第二个实例，而且比本轮新文件那一处更靠前**：`scripts/host-consumers.cjs:findHostRoot()` 的判定只到 `statSync(candidate).isDirectory()`，**一个空目录就算通过了**，于是各文件那句 `try { findHostRoot() } catch { t.skip(…) }` 的守卫**根本没有触发**（它返回了路径），失败发生在 60 行之外的 `measureGap()` 里——抛异常的是**取宿主这一步**，任何按 issue #102 立的两个出口都兜不住。10.10.0 首轮 CI 翻红的是"新用例假设宿主在场"，这一轮翻出来的是"**共享 helper 假设目录里有宿主**"：同一条纪律，换了层。
+
+修法与它自己的反向用例：`findHostRoot()` 现在要求 `themeEntryPath(root)` 这个**建表非读不可的文件**真在场才算宿主——标记走 `host-colour-tokens.cjs` 那一个出处，不在本文件里再抄一遍路径（两份清单会漂，这是本仓库记过的老账）。**显式 `DSH_HOST_ROOT` 被拒时直接报错、不再往下走候选**：悄悄改用机器上的全局安装，等于交出一份"看着像用户指的那台"的读数。报错把被拒的路径与原因都点名（`a directory, but no dsh-client-ui-theme/lib/client.js inside`）。新增用例在 `tests/host.gap.test.cjs`，三条断言各自堵一种蒙混：① 空目录必须被拒；② 被拒的原因必须点名这个路径、且**Rejected 只有一项**（否则就是悄悄回落到别的安装）；③ 撤掉覆盖后对照面照旧（要么解析出真宿主并 stat 到标记文件，要么给出那条具名的 `host not found`）。**修前红实测过**：把 `git show HEAD:scripts/host-consumers.cjs` 取出来单独加载，同样的空目录下它 `returned "C:\\…\\dsh-empty-host-LTEn8i"`——也就是 ① 那条断言在修复前必红，不是"我当时手工验过"。修后同一形态重跑，那 3 条不再是红。
+
+### 十、收口时撞到的第三个实例：一整块发布记录从 CHANGELOG 的结构里消失了，而门全绿
+
+插新版本块的时候，把 **`## [10.10.0] - 2026-10-10` 这一行标题覆盖掉了**：10.10.0 的整段内容一个字没丢，只是变成了 10.12.0 那一块的延续。现成的门没有一个看得见这件事——`docs.numbers` 读的是 CHANGELOG 里带「项质量门」标记的那一行（它还在），`readme.roadmap` 管 Roadmap，`desktop.claims` 管兼容表，`repo:eol` 管行尾。**一整套用例 + 12 道工艺门在一个"已发布版本从变更日志的结构上不存在"的仓库上全绿。**
+
+补法是一条结构不变量 + 两条**分别点名由哪条腿接住**的变异（`tests/docs.numbers.test.cjs` 的新用例）：发布块的小节标题每块都从 `### 一、` 重新开始，所以**标题一旦丢了，上一块的计数就会从 `九` 回到 `一`**——这是这件事唯一的可见指纹。两条变异按位置归因写死：删**最新块**的标题时计数腿必须不红（它上面没有块可以吞），必须由「最新块版本号 == `package.json` 的 `version`」那条腿接住；删**下面某块**的标题时计数腿必须红、且版本腿必须不动。不写成"随便红一条就行"——那种循环在砍掉任意一条腿之后照样全绿。**边界照实记**：这条不变量只管用 `一、二、三…` 编号的块（本轮与 10.10.0）。`10.9.3` 及更早的小节是**不编号**的 `###`（实测：全文件 `### Added` 与 `### Fixed` 各 **0** 处，10.9.3 那一块用的是「取证：…」「修复」「门」「未验证 / 边界」这一族标题），同一把尺子量不到它们——所以它兜不住旧写法的标题丢失，兜住的是"新写法 + 忘记加 / 覆盖掉新版本块"这一支。
+
+**这条门自己的第一版是假门**，而且抓它的正是它自己的变异腿：我写的是 `if (!s || last === 0) continue;`，于是每块第一个 `### 一、` 被跳过、`last` 永远停在 0、后面每一条也都被跳过——**这个函数对任何文件都返回空**。删掉 `## [10.10.0]` 的那条变异当场拒绝变红，才看出问题在判定而不是在文件。本仓库记过的第 1 号自纠形状（"永远绿"的门是被变异抓出来的，而且常抓的是我自己刚写的那条）第四次原样复现。
+
+**同一个事故的第二半：scope 的边界把我方自己的正文当成了标题。** 补完 §十 才发现 `docs.numbers` 的"当前发布块"边界是 `line.includes(until)`，而 §十 那句话里正好用反引号写了 `## [10.10.0]` 这一行——门把**提到**它的那句正文当成了块尾，于是块尾以下的所有宣称（包括 `质量审计 229/229` 那一条）一律读成"宣称被删掉了"，报红。这不是门太严，是门的边界条件写成了"字符串出现过"：任何解释标题丢失的句子都会踩到。改成 `startsWith`（两处 `from` / `until` 都按行首匹配），并补一条对照用例：把"包含但不以它开头"的引用行注进块里，宣称必须**照旧读得到**；用例同时断言注入行确实"contains 而不 startsWith"，否则那条腿是空转。`docs.numbers` 本轮因此共 **+2** 条（块结构门 + 这条 scope 对照）。
+
+### 十一、对抗评审（降级模式）自己抓出来的一条：关系式判据会把"双双读不到"当成"一致"
+
+本轮按用户要求跑了一次**三方对抗评审**（蓝军 → 第三方 → 裁定）。因为用户明确要求不再派生子代理，三角色由同一个 agent 串行扮演，所以这是**同模型不同角色的对抗审查**，不是"独立第三方验证"。三份报告落盘在 `docs/review/`（该目录已 gitignore，刻意不发布；README/CHANGELOG 也不引用它们，避免死链与"自我认证"的错觉）。
+
+最值得记的一条不是蓝军抓的，而是**裁定环节对三方共同前提的审查**：`side` 组这一轮补的是**关系式**判据（"我方那个面与宿主自己的兄弟面在同一条线上"），而关系式有一类等式判据没有的洞——**两个数都读不到时它们相等**。现读到探针在元素缺失时回答字符串 `MISSING`，于是 `footRectLeft === regionRectLeft` 在"两个盒子都不在场"时为真。当时同组另外两条腿会因为 `-4px` 对不上而红，所以整组不会假绿——**但一条判据不能靠兄弟腿替自己守前置条件**，那正是"这个组是绿的"悄悄退化成"某条腿是绿的"的地方。
+
+修法与它自己的证据：`side-plane-flush-with-host-region` 与 `side-plane-aligns-right` 各加前置条件（`MISSING` / 空串一律判红），并新增一条**合成读数**用例（不需要浏览器 ⇒ 在无宿主、无浏览器的机器上照跑）把四种形状钉死：健康 = 真、双双缺失 = 假、单侧缺失 = 假、右缘差 4px = 假。
+
+同一轮裁定还**更正了自己写下的判断**：它曾把"工艺门『恰好两条』从未被变异证明"列为待补项，读码后发现 `tests/craft.quality.test.cjs:166` 早就往表里种了第三条脚规则并要求 `side-foot-hash-free` 判红，另配"真发货表必须绿"的对照。**评审记录里"没人证明过"这类句子，必须先去证明清单核对再说**，否则合并清单会把已经完成的工作重新写成欠账——本仓库第 9 号自纠形状（清单按出口核对）换了个方向复现。
+
+### 门与账本
+
+回归门 **480/480**（10.10.0 为 461）。+19 由套件现场加载数出来、按文件拆开记：`host.sidefoot` **9**（新文件）+ `craft.quality` **1** + `wash.cascade` **5**（对齐族四条变异那条 + §四 补的层叠与关系式六条那条 + 提取账目那条 + 注入面拒绝那条 + 几何腿前置条件那条）+ `client.storage` **1** + `host.gap` **1**（§九 那条入口拒绝）+ `docs.numbers` **2**（§十 的 CHANGELOG 块门 + 「引用不能当 scope 边界」的对照）；`client.smoke` 是**换形状**不是加条数（仍 135 条），所以不进这个加法。质量审计 **229/229**（217 调色 + 12 工艺），工艺门新增一枚即 `side-foot-hash-free`。本轮新增**变异 32 处**，全部是套件里能重跑的用例：工艺门 4（哈希锚点写回 / 脱作用域 / 塞 `transform` / 长出第三条）+ 引擎对齐 4（删左 margin / 删右 margin / 脱作用域 / 整族改名，各自点名翻红的判据 id 集合）+ 夹具层叠与关系式 6（宿主块换成不碰这个面 / 给宿主块加一条 `(0,2,0)` 的绘制 / **把宿主的 inset 从 `12px` 搬到 `9px` 并要求整组仍绿** / 同一个 `9px` 宿主上把我方写成 `-12px` 并要求三条右缘判据红 / 删 `padding-left` / 删 `padding-right`）+ 宿主形状 5（第二枚基名 / 整族改名 / 裸后缀配共享后缀 / 不再嵌套 / 已扁平化的树不许读成嵌套）+ D2 源码 2（恒假 / 丢掉空值判定）+ CHANGELOG 结构 2（删最新块标题 / 删下面某块标题，两条各点名必须由哪条腿接住）+ scope 边界对照 1（把下一块标题当引文写进正文，宣称必须照旧读得到）+ 夹具提取与注入面 6（`@media` 里带被读属性的脚规则必须拒绝建页 / 选择器列表里部分丢弃必须拒绝 / 四类注入字符串各塞一处 `</` 都必须拒绝建页，真夹具照旧要能建成）+ 几何腿的前置条件 2（两个盒子双双 `MISSING`、变量解析成空串，都必须红——相等判据不许把"都没读到"当成"一致"）。另有 **4 处具名的"不覆盖"循环**（`background` / `box-shadow` / `border` / `width` 删掉后断言 `redIds === []`）——它们不产生红，产生的是这句"这里今天没有覆盖"的读数本身。另有两处**门的入口判定**修正各配一条反向用例：新文件自己的 `hostRoot()` 与 §九 这条共享的 `findHostRoot()`——同一个病灶的两个实例，都要求"真读得到那个包"才算语料可用，都不许把"这台机器没有宿主"报成"检查失败"。`skin:check` / `host:census:check` / `previews:check` / `repo:eol` / `typecheck` 全绿；`npm run wash:check` 严格模式本机实跑 exit 0，判据组名单由门核对为 `['corner','desktop','fade','side']`（新增一组必须改这里，否则整组静默不跑）。
+
+### 未验证 / 边界
+
+- **A1 修正在官方桌面壳上的观感：0 次目视。** 证据止于"读它发货的 CSS 原文 + 在真实引擎里重演"（`side` 组九判据）。壳加载新代码要用户本人重启该应用，本轮没有动运行中的实例。
+- **`anchors.drifted: [] && pending: false` 从未在活页面上读到过。** 这是 Roadmap A1 的验收条件，所以 A1 只记"侧栏脚区已去哈希"，整条不销账；卡片一族仍是哈希写法是另一半原因。
+- 侧栏那组 margin / 填充：**数值不是我方发明的**——现读到宿主的 `.hHd-Xa_regionArea` 自己就写着 `margin-left:-4px;margin-right:calc(-1 * var(--dsh-sidebar-inline-padding));padding-left:4px`（见 §四），我方是把同列的脚区对齐到宿主对兄弟面已有的那套约定。所以门现在比的是**宿主那条规则**而不是我方写的数。仍然属于决定的只有两件事：**要不要跟齐**，以及右侧那条 `padding-right`（宿主对 region 没写这一条，是我们补的）。门只保证"这三条只可能是这六条属性 + 恰好两条规则 + 右缘等于宿主的变量"，不保证好看。
+- **`side` 组对四条声明今天是"知道覆盖不到"而不是"覆盖到了"**：`background` / `box-shadow` / `border` / `width` 在这套宿主 CSS 下删掉不产生任何红（宿主不抢这个面，抹平要的正是默认值）。这一条已写成具名的不覆盖用例，见 §四末段。
+- 夹具**不复现条件规则**：宿主的脚规则如果落在 `@media` / `@supports` 里，`walkCssBlocks()` 会把它**跳过并记进 `hostFootConditionalSkipped`**（今天恰好有 1 条：`prefers-reduced-motion` 下的 `transition` / `animation`）。边界因此是"夹具与真实页差一条被跳过的条件规则"，而不是"条件被当成永恒"——只有当被跳过的声明碰到判据读的十个属性之一时门才拒绝建页。也就是说：**今天这条被跳过的声明，引擎侧没有覆盖**，它靠的是"没人读它"这个现读事实。
+- `host.sidefoot` 的壳腿依赖本机安装的官方桌面壳：`app.asar` 不在时**具名跳过**。CI 上跑到的是合成语料那五条 + 逻辑门，"两台宿主基名不同"这一条**不因此在 CI 上被重新证明**。
+- 诱饵元素证明的是"作用域在**当前宿主 CSS 形状**下兜住了共享后缀"，不是"宿主永远不新增第二枚 `_footerActions`"；后者由 `host.sidefoot` 的第一条合成腿在语料真长出第二枚 `_footArea` 时翻红，而 `_footerActions` 长出第三枚基名 today 只红在"我方脱了作用域"这一条件上。
+- **`</` 守卫只加在 corner/side 那份夹具**（现读：另外两份夹具插进页面的只有类名——被形状正则限定——与我方常量表，没有宿主 CSS 原文）。**如果将来也把宿主 CSS 搬进去，守卫不会自动跟过去。**
+- 块扫描会先剥 CSS 注释；遇到**未闭合**的 `/*`，下一条选择器会被粘进注释残段，结果是提取器判"不可复现"而**拒绝建页**（实测行为是响的，不是静默少复现）。
+- 关系式判据（`footRectLeft === regionRectLeft`、`footMarginRight === '-' + insetVarOnFoot`）现在各自带前置条件（`MISSING` / 空串一律判红）。仍然要说清楚：**它们证明的是夹具页里的层叠关系，不是官方桌面壳上的像素**——壳上仍 0 次机读、0 次目视。
+- 页权锁 / 两代纤维的热重载仍**没有在真页面上演过**（同 10.10.0 的边界，本轮未触及）。
+
 ## [10.10.0] - 2026-10-10
 
 > **这一版没有新的视觉决定。** 上一轮改的是那条带子画几层，这一轮改的是**证据本身**：把"我看到了"变成别人能复算的东西，并把评审留在本地待办里的四条欠账（不是用户报的，是我们自己记下的）一次清完。回归门 **413 → 461**（+48），质量审计 **228/228**（217 调色 + 11 工艺，门数不变）。
