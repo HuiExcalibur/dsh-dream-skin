@@ -251,17 +251,16 @@ README 侧同一事实见 `README.md` 的「兼容性」表里桌面端那一行
 2. 在该 profile 目录里手工 `pnpm add dsh-dream-skin@<确切版本号>`。本机现状即这条的产物
    （下面这组读数于 2026-10-12 从 `~/.dsh/profiles/desktop` **只读**取，`node -p require(...)` / `grep` / `find | wc -l`，
    没有走 `dsh --dump-config`，因为那条会写 profile）：
-   `package.json` 依赖为 `^10.12.0`、`pnpm-lock.yaml` 钉 `10.12.0`（该条的 `resolution` 是
-   registry 的 `integrity: sha512-hT/TCdqtC9Pg7ex1lbB03I2NTvw41G+yhEQvOvWsMlHrWON/HrXGj3novK6nZz+vM/85NL/4VWez1Pirqz2C2w==`
-   而不是 `link:`，这正是它与工作区安装的区别所在）、
-   `node_modules/dsh-dream-skin` 是 24 个文件的 registry 安装物（`PLUGIN_BUILD = "10.12.0"`，与包版本一致）。
+   `package.json` 依赖为 `^10.12.1`、`pnpm-lock.yaml` 钉 `10.12.1`（该条的 `resolution` 是
+   registry 的 `integrity: sha512-k7iR2LaNFm/89Lu5hu9J1IfzGKCoCz3owpWw72TX7L/DBFiTyC+qz+pmVDQ4WqMU7vsgMfofWoBEd9pQlSrUjQ==`
+   而不是 `link:`，这正是它与工作区安装的区别所在；这串 integrity 与 `npm publish` 的回执、与 `npm view dsh-dream-skin@10.12.1 dist.integrity` **三处逐字符相同**）、
+   `node_modules/dsh-dream-skin` 是 24 个文件的 registry 安装物（`PLUGIN_BUILD = "10.12.1"`，与包版本一致）。
    **两点容易被读错的**：① `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 至今仍只列着
    `10.9.1/10.9.2/10.9.3`——名单里既没有 10.10.0 也没有 10.12.0，而这两版都确实装进去了（lock 钉着），
    所以那几次**不是**靠改这份名单放行的；结合 8.3(b) 记录的冷静期行为，剩下的出口就是命令行上的一次性
    `--config.minimumReleaseAge=0`。这条推断双向有用：**"名单里没有新版本"不等于"新版本装不上"，
    "名单里有"也不等于"装的就是它"**——判第三件事只看 lock 与安装物读数；
-   ② 该目录里现在跑的是 `10.12.0`，`10.12.1` 尚未装入（发版当日 24 小时窗口内，装它仍要带 ① 那个旗标），
-   而**装载要用户本人重启应用才会发生**——本文件不假定任何一次重启是维护方代做的。刚发出去的那 24 小时内走这条会撞上 8.3(b)：
+   ② **文件层与进程层是两件事**：2026-10-12 用户开口要 10.12.1 之后，维护方在该目录里按本节这条路装上（`pnpm add dsh-dream-skin@10.12.1 --config.minimumReleaseAge=0`，18 秒完成，其中一次 registry GET 遇到 `ECONNRESET` 由 pnpm 自己重试扛住），装后现核三读数 = `^10.12.1` / `PLUGIN_BUILD = "10.12.1"` / 24 文件；**但装的时候应用正在跑**（`tasklist` 里 5 个 `DeepSeek Harness` 进程在场，维护方没有代关掉它），所以**渲染进程里加载的仍是重启前的 `10.12.0`**——"目录里已是新版"与"界面上还是旧版"此刻同时为真，后者要等用户本人重启。刚发出去的那 24 小时内走这条会撞上 8.3(b)：
    2026-10-09 在该目录里遇到的就是它，本机 2026-10-10 在临时目录里用"把窗口拉大到覆盖已装版本"的办法复现了同一条
    报错，当时实测只有 `--config.minimumReleaseAge=0` 通。
    **一条自我打脸的记录，留着当教训**：上面这段"本机现状"此前写的是 `^10.9.3`，而 ``git log --oneline -S'依赖为 `^10.9.3`' -- docs/publishing-to-npm.md``
