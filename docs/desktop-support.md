@@ -211,7 +211,7 @@ DSH Desktop 每次启动绑定 OS 分配端口（`--port 0`）→ 浏览器 orig
 **三条必须一起读的限定（对抗评审 10.12.1 B2 / T1 / T3 采纳）**：
 
 1. **这个字段不区分两种成因**。"这枚哈希在本页缺席"既可能是**渠道分叉**（本页是官方壳，它自己掷了另一个基名），也可能是**npm 宿主把那枚哈希重掷了**（本页是 Web 渠道，登记表里的基名已经过期）——运行时**没有可用的渠道判据**：三枚桌面契约戳与 `.dshDesktopSidebarSurface` 在官方壳的 `app.asar` 里各 0 命中（实测见上「桌面壳检测」一节），`isDesktopShell()` 在那台壳上返回 false，所以不能拿它当"这是壳"的证据。误标的后果止于诊断字段（外观与功能都不受影响），而**真正过期会被发现的地方是门**：`tests/hashes.test.cjs` 有一条"npm 那半其实已死"的变异腿，登记表 npm 侧基名在实装安装物里查不到就点名翻红。所以这是"字段可能说错话、门会来纠正"的形状，不是无声失败。
-2. **对新池的"再分类"不是随时发生**。`armLateCorrection()` 只在终局**点名了真漂移或未挂载**时被挂上（latch 条件 `drifted > 0 || notMounted > 0`，`lib/client.js:3945-3946`）；一张只有 `channelAbsent` 非空、其余皆空的壳形状页**根本不会创建这个观察者**，于是那条再分类路径只在别的东西先触发 latch 时才可达。文档写"观察者对 `channelAbsent` 做再分类"描述的是**存在的代码路径**，不是"每次页面都会走一遍"。
+2. **对新池的"再分类"不是随时发生**。`armLateCorrection()` 只在终局**点名了真漂移或未挂载**时被挂上（latch 条件 `drifted > 0 || notMounted > 0`，即 `lib/client.js` 里 `warnOnMaterialSelectorDrift()` 中那道 `if (conclusive && !verdictLatched && …)`）；一张只有 `channelAbsent` 非空、其余皆空的壳形状页**根本不会创建这个观察者**，于是那条再分类路径只在别的东西先触发 latch 时才可达。文档写"观察者对 `channelAbsent` 做再分类"描述的是**存在的代码路径**，不是"每次页面都会走一遍"。
 3. **降级快照里没有这个字段可读**。`status: "degraded"` 走的是另一条内联字面量，`anchors` 整个是 **`null`**（四个池都是）——`tests/client.smoke.test.cjs` 的 B-3 守卫比的是**顶层键集**，`anchors` 这个键两边都在，所以子结构不同不会让它红。**消费方必须先判 `status !== "degraded"` 再读 `anchors.channelAbsent`**，直接读会在降级页上抛。
 - **降级路径同样发布**（`status: "degraded"` + `reason` + `lastError`），且字段集与 ready/applying **完全一致**（测试守卫"snapshots expose EXACTLY the same key set"逐键核对，v9.27.0，B-3）——消费方永不撞 `undefined`，诊断方能区分"插件未安装"与"已安装但宿主 seed 换代"。
 - 宿主采纳后自动重发布（`loadFromHost` 尾部 `publishStatus()`），`skin/shell` 反映的永远是生效值；后续任何重发布经 prev-merge 保住探针结果。`apply()` 对外从不抛错（B-4 约束）：`ready` 只在自然收尾时签署，`publishStatus` 自身包 try。

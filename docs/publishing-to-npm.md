@@ -143,8 +143,9 @@ pnpm 的发布冷静期（8.3）。所以"本地装好了 + `npm test` 绿 + pub
 
 **这一节的定位（先把没验证的部分说清楚）**：这是一份**人工**发布流程。CI 不跑它——`.github/workflows/` 里没有任何
 "从公共源装本包"的步骤（可复现：`grep -rn "registry.npmjs\|pnpm add dsh-dream-skin" .github/` 无输出）；
-`tests/` 里也没有任何用例钉住本节的读数（`tests/previews.test.cjs:96-104` 只钉住 `docs/previews` 不得回到 `files`，
-`tests/client.smoke.test.cjs:863` 只比对**工作树**里的 `status.build === pkg.version`）。
+`tests/` 里也没有任何用例钉住本节的读数（`tests/previews.test.cjs` 里那条 `#83: the previews are advertised from GitHub, not shipped in the tarball`
+只钉住 `docs/previews` 不得回到 `files`，`tests/client.smoke.test.cjs` 里那条 `diagnostics: window.__DSH_DREAM_SKIN_STATUS__ …`
+用例中的 `bundle build matches package.json version` 断言只比对**工作树**里的 `status.build === pkg.version`）。
 下面每条都写着产生它的命令，发布人自己跑；跑不了（没有第二个 profile、没有网络）就不要对外说"发布已验证"。
 
 **8.1 registry 读侧的同步延迟：404 不等于发布失败**
@@ -247,13 +248,27 @@ pnpm add dsh-dream-skin@<确切版本号> --config.minimumReleaseAge=0
 README 侧同一事实见 `README.md` 的「兼容性」表里桌面端那一行。走得通的两条，装完都要按 8.5 验：
 
 1. 应用内的插件管理界面（该 profile 目录下的 `.plugin-manager/logs` 是它的痕迹，本机实存）；
-2. 在该 profile 目录里手工 `pnpm add dsh-dream-skin@<确切版本号>`。本机现状即这条的产物：
-   `~/.dsh/profiles/desktop/package.json` 依赖为 `^10.9.3`、`pnpm-lock.yaml` 钉 `10.9.3`（该条的 `resolution` 是
-   registry 的 `integrity: sha512-…` 而不是 `link:`，这正是它与工作区安装的区别所在）、
-   `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 列着 `10.9.1/10.9.2/10.9.3`、
-   `node_modules/dsh-dream-skin` 是 22 个文件的 registry 安装物。刚发出去的那 24 小时内走这条会撞上 8.3(b)：
+2. 在该 profile 目录里手工 `pnpm add dsh-dream-skin@<确切版本号>`。本机现状即这条的产物
+   （下面这组读数于 2026-10-12 从 `~/.dsh/profiles/desktop` **只读**取，`node -p require(...)` / `grep` / `find | wc -l`，
+   没有走 `dsh --dump-config`，因为那条会写 profile）：
+   `package.json` 依赖为 `^10.12.0`、`pnpm-lock.yaml` 钉 `10.12.0`（该条的 `resolution` 是
+   registry 的 `integrity: sha512-hT/TCdqtC9Pg7ex1lbB03I2NTvw41G+yhEQvOvWsMlHrWON/HrXGj3novK6nZz+vM/85NL/4VWez1Pirqz2C2w==`
+   而不是 `link:`，这正是它与工作区安装的区别所在）、
+   `node_modules/dsh-dream-skin` 是 24 个文件的 registry 安装物（`PLUGIN_BUILD = "10.12.0"`，与包版本一致）。
+   **两点容易被读错的**：① `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 至今仍只列着
+   `10.9.1/10.9.2/10.9.3`——名单里既没有 10.10.0 也没有 10.12.0，而这两版都确实装进去了（lock 钉着），
+   所以那几次**不是**靠改这份名单放行的；结合 8.3(b) 记录的冷静期行为，剩下的出口就是命令行上的一次性
+   `--config.minimumReleaseAge=0`。这条推断双向有用：**"名单里没有新版本"不等于"新版本装不上"，
+   "名单里有"也不等于"装的就是它"**——判第三件事只看 lock 与安装物读数；
+   ② 该目录里现在跑的是 `10.12.0`，`10.12.1` 尚未装入（发版当日 24 小时窗口内，装它仍要带 ① 那个旗标），
+   而**装载要用户本人重启应用才会发生**——本文件不假定任何一次重启是维护方代做的。刚发出去的那 24 小时内走这条会撞上 8.3(b)：
    2026-10-09 在该目录里遇到的就是它，本机 2026-10-10 在临时目录里用"把窗口拉大到覆盖已装版本"的办法复现了同一条
    报错，当时实测只有 `--config.minimumReleaseAge=0` 通。
+   **一条自我打脸的记录，留着当教训**：上面这段"本机现状"此前写的是 `^10.9.3`，而 ``git log --oneline -S'依赖为 `^10.9.3`' -- docs/publishing-to-npm.md``
+   显示那半句是 10.10.0 那轮（`aa6c36c`）引进来的——也就是**落笔时就已经是旧读数**（同一轮里该 profile 装的是 10.10.0），
+   此后 10.12.0、10.12.1 两轮都没回头改。而 10.12.1 的修正又是**在发布之后**做的——所以 `npm` 上那个
+   `dsh-dream-skin@10.12.1` 的包内本节仍写着 `^10.9.3`，要到下一版才对得上。以"现状"自称的段落必须带取数日期，
+   且下一轮发布前要重读一遍；评审把这条从 🟡 升级为 🟠（以"现状"自称又与现场矛盾 = 声明失实）的理由就在这里。
 
 **8.5 验"到底加载了什么"，三个读数 + 一条装载计划**
 
@@ -271,6 +286,11 @@ npm pack --dry-run          # 在仓库里跑，拿它的 total files 跟上一�
 三个读数 = `10.9.3` / `PLUGIN_BUILD = "10.9.3"` / `22`，逐项一致；安装物里 `scripts/`、`tests/`、`CHANGELOG.md`、
 `docs/screenshots/`、`docs/previews/` 全部不存在
 （前三个被 `package.json` 的 `files` 白名单挡在外面，后两个是 issue #83 起刻意排除，见第一节与第五节）。
+**2026-10-12 发布 10.12.1 后同一条重跑（临时目录 `npm install dsh-dream-skin@10.12.1`）**：三读数 =
+`10.12.1` / `PLUGIN_BUILD = "10.12.1"` / `24`，与同轮 `npm pack --dry-run` 的 `total files: 24` 对上；
+再加两条形同"把包拆开看"的核对：安装物的 `dist.integrity` 与发布回执、与 `npm view dsh-dream-skin@10.12.1 dist.integrity`
+三处逐字符相同（`sha512-k7iR2LaNFm/89…oBEd9pQlSrUjQ==`），且 `grep -c channelAbsent` 在**发货的** `lib/client.js`
+里读到 14 处——第四池不是只活在仓库里。registry 侧 `dist.fileCount = 24`、`dist.unpackedSize = 1071403` 亦同轮现读。
 **同一命令在 10.10.0 的工作树上重跑是 `total files: 24`**——多出的两个是本轮 B-04 补进 `files` 的
 `docs/publishing-to-npm.md` 与 `docs/computed-style-gate-in-ci.md`（这两份是"访客要能自己复算门"的说明，
 不发出去就等于让人来问）。所以上面那组 22 是 **10.9.3 安装物的实测读数**，不是当前仓库的对照基准；发版时
@@ -280,7 +300,8 @@ npm pack --dry-run          # 在仓库里跑，拿它的 total files 跟上一�
 现读 `npm pack --dry-run` 的两栏，与**上一次发布**的读数比，而不是与文档里的历史数比）。
 **为什么 `PLUGIN_BUILD` 不能省**：`package.json` 只是包的元数据，它的版本号对了，并不说明浏览器真正加载的
 那份 `lib/client.js` 是新的——两者不同步就意味着"包装上了、跑的是旧 bundle"，而 registry 侧没有任何门会为此翻红
-（仓库侧的同步断言见第五节 PLUGIN_BUILD 条目与 `tests/client.smoke.test.cjs:863`）。
+（仓库侧的同步断言见第五节 PLUGIN_BUILD 条目与 `tests/client.smoke.test.cjs` 里那条
+`bundle build matches package.json version`）。
 
 装载计划半边（真 profile 上）：
 

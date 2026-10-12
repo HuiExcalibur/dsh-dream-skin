@@ -71,11 +71,21 @@
 ### 未验证 / 边界
 
 - **`channelAbsent` 的读数来自一台壳、一个时刻**：`measuredAt: '2026-10-12'`，壳内宿主字符串 `0.2.0-rc.2`。壳升级后基名会再掷一次——那时门会红在"继任基名被重掷"这一腿，这是设计意图（红得有名字），但**"壳更新之后这张表还成立"这件事本身没有被追过**。npm 半边同理，是 `0.2.0-rc.1` 的实装读数。
-- **todo 面板与队列坞在壳上的磨砂仍没修**：本版只让读数诚实。要把它换掉不能图省事用 `[class$="_dock"]`：现读壳里 `_dock` 后缀有 3 个基名（`v1kfCW` / `RlGAzG` / `nJdiTq`），其中 **`RlGAzG_dock` 就在 `skeleton/InputBar.module.css` 里**（composer 那一族），把 blur 加到它上面等于重赌一次 `lib/client.js:2558-2564` 记着的成因——那条回归正是"给 composer 一族加 `backdrop-filter`"造成的（fixed 定位的 Tooltip 被拽进卡片坐标系）。可用路径已量到：**用 module 内唯一后缀反推前缀**（现读到 `RlGAzG_cardWorkspaceTrigger` 这类只属于单个模块的类名，可以据此在同模块内解出 `RlGAzG_` 这枚前缀），这条路属 Roadmap A1 未完成部分，本版不开工。
+- **todo 面板与队列坞在壳上的磨砂仍没修**：本版只让读数诚实。要把它换掉不能图省事用 `[class$="_dock"]`：现读壳里 `_dock` 后缀有 3 个基名（`v1kfCW` / `RlGAzG` / `nJdiTq`），其中 **`RlGAzG_dock` 就在 `skeleton/InputBar.module.css` 里**（composer 那一族），把 blur 加到它上面等于重赌一次 `lib/client.js` 材质模糊注释里那条回归（规则 1 的原文是 "the composer card … deliberately carries the stop / send button Tooltips — fixed popovers — and blurring it made them anchor to the card"）——成因正是"给 composer 一族加 `backdrop-filter`"（fixed 定位的 Tooltip 被拽进卡片坐标系）。可用路径已量到：**用 module 内唯一后缀反推前缀**（现读到 `RlGAzG_cardWorkspaceTrigger` 这类只属于单个模块的类名，可以据此在同模块内解出 `RlGAzG_` 这枚前缀），这条路属 Roadmap A1 未完成部分，本版不开工。
 - **壳上观感：0 次目视**。`channelAbsent` 是读数层的东西，它不改任何声明，所以目视能证明的只有"页面没坏"；**四池的活页复测（预期 `drifted: []` 且 `channelAbsent` 恰两枚）本轮没做**——那要把用户的壳再重启一次并挂调试端口，而重启必须由用户本人点头。上一条 10.12.0 那次读到的 `drifted` 非空正是本版要消除的形状，所以这一格是**验收条件本身**，不是可省的步骤；**没人眼看过"todo 面板在壳上是什么样子"**。
 - 分类器仍**绝不 fetch `<link>` 样式**（零网络不变式）：模块 CSS 以 `<link>` 形态分发时该组回落 `drifted`。这条边界从 10.5.0 起一字未变。
 - `<style data-plugin-css>` 读法只看**类名 token 是否出现**，不看它属于哪个模块——宿主若在同一条自有 CSS 里以别的模块路径复用同名 token，归属会误判成 `notMounted`。本机两台宿主今天没有这种复用（本轮为建登记表逐模块列过类名），但这是一个**已知的宽松**，不是验过的性质。
 - Roadmap A1 **仍不销账**：卡片一族（`Mbwy4a_card` / `COMPOSER_HASH_CARDS = .uV2eYG_card`）仍有押哈希的写法，且探针**不覆盖**按需挂载的功能面（提问卡 / 授权卡）。
+
+### 发布读数（2026-10-12，发布之后补记）
+
+- 提交 `afa9747`（推送前远端多了一条 daily growth chart `bf942e6`，只动 `docs/stats.*`、与本次 19 个文件零交集 ⇒ `git rebase origin/main` 后普通 push，**没有**用 force）。tag **`v10.12.1`**（annotated）打在 `afa9747`、单 refspec 推送。
+- CI run **38240245310** 六作业全绿（`test` × Node 18/20/22/24 + `typecheck` + 计算样式门），门那一作业的日志里有读数行 `Engine measured 13 reading rows across host / desktop / coexist.` ⇒ runner 上是**量出来的**，不是空过。
+- npm：`+ dsh-dream-skin@10.12.1` / **24 文件** / shasum `452227344fcdea9da9d0c43c7de2a979139ddb2d` / integrity `sha512-k7iR2LaNFm/89…oBEd9pQlSrUjQ==`；registry 记的发布戳 `2026-10-12T11:08:28.308Z`，`dist-tags.latest` 已翻到 `10.12.1`。**读侧延迟又演了一次**：`npm publish` 打印完成的**当时**，`npm view dsh-dream-skin@10.12.1` 报 404 且 `dist-tags.latest` 仍是 `10.12.0`，几分钟后两处都对了——判"发出去了没有"照旧只看 packument 的 `time`。
+- **从 registry 真装一次**（Roadmap B6 那条清单腿）：临时目录 `npm install dsh-dream-skin@10.12.1` ⇒ 三读数 `10.12.1` / `PLUGIN_BUILD = "10.12.1"` / **24 文件**，安装物 lockfile 的 `resolution.integrity` 与发布回执**逐字符相同**；再 `grep -c channelAbsent` 在**发货的** `lib/client.js` 里读到 **14** 处——第四池确实随包出去了，不是只活在仓库里。registry 侧 `dist.fileCount = 24`、`dist.unpackedSize = 1071403` 同轮现读。
+- GitHub Release 已建（`v10.12.1`）。发布时现查开放 issue：`[]`（这次 `gh` **直连超时**，给单进程加 `HTTP(S)_PROXY` 后才读到——`gh` 不继承 git 的代理设置，所以"git 通了"不等于"gh 通了"）。
+- **发布之后才补的两处**（都是本轮评审欠的账，记在这里免得被当成发布前就-done）：① `docs/publishing-to-npm.md` 的「8.4 官方桌面 profile」"本机现状"按现场读数重写（🟠 T2 销账：原文自称现状却写着 `^10.9.3`，现场是 `^10.12.0`），并补了 2026-10-12 那条 registry 真装的读数；② 同一节里剩下三处**跨文件行号引用**换成测试标题（`#83: the previews are advertised from GitHub, not shipped in the tarball` / `bundle build matches package.json version`），本条上方那处 `lib/client.js:2558-2564` 一并换成注释原文。**代价要说清**：`docs/publishing-to-npm.md` 是在 npm `files` 白名单里的，所以**已发布的 `10.12.1` 包内那一节仍写着 `^10.9.3`**，要到下一版才对得上——以"现状"自称的段落必须带取数日期，且发布前重读一遍。
+- 桌面 profile 仍是 `^10.12.0`（**`10.12.1` 未装入**：发版 24 小时窗口内装它要 `--config.minimumReleaseAge=0`，而**加载要用户本人重启应用**）。所以 `channelAbsent` 在壳上的活页读数**仍是 0 次**，Roadmap A1 的第四池验收条件（`drifted: [] && notMounted: [] && channelAbsent: ["…两组…"] && pending: false`）还等着那一次重启。
 
 ## [10.12.0] - 2026-10-12
 
