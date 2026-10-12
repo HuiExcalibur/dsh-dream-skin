@@ -291,3 +291,226 @@ test("mutation #94: dropping packages from the corpus reddens the shortfall chec
 	clock.host.root = "D:\\elsewhere";
 	assert.equal(censusDrift(clock, frozen), false, "clock/root must NOT read as drift");
 });
+
+/**
+ * ---------------------------------------------------------------------------
+ * A1 — the channel-divergent pool (Roadmap A1, 10.12.1)
+ * ---------------------------------------------------------------------------
+ *
+ * `anchors.channelAbsent` excuses a hash from the drift alarm on the strength of a
+ * measurement: "npm draws this class, the official shell does not, and here is the module
+ * path the shell draws instead". That sentence is only worth anything if a machine re-reads
+ * the bytes, because every part of it is the kind of thing that quietly stops being true —
+ * the shell adopts our hash back, the npm package renames it, or the "harmless" half rots
+ * because the host starts declaring a background there.
+ *
+ * So the check is a pure function over (registry, bundle text, npm package text, shell text)
+ * and the mutation legs below feed it LIES rather than editing files: they run on a CI box
+ * with no DSH install and no desktop shell, which is the only way the gate is known to be able
+ * to fail. The real-corpus run is a separate, honestly-named test further down.
+ */
+const { CHANNEL_DIVERGENT_GROUPS } = require("../scripts/data/dead-hashes.cjs");
+const { findShellAsar, readShellAsar, moduleClassesInShell, classRuleInShell } = require("../scripts/lib/desktop-shell.cjs");
+
+function channelDivergentProblems({ registry, runtimeGroups, probesBlock, npmTextByPackage, shellText }) {
+	const problems = [];
+	const regKeys = Object.keys(registry).sort();
+	const runKeys = runtimeGroups.slice().sort();
+	if (JSON.stringify(regKeys) !== JSON.stringify(runKeys)) {
+		problems.push(`bundle pool [${runKeys.join(" | ")}] != registry [${regKeys.join(" | ")}]`
+			+ " — a group excused in one place but not the other either silences an alarm or keeps a dead claim");
+	}
+	for (const [group, entry] of Object.entries(registry)) {
+		if (!probesBlock.includes(group)) {
+			problems.push(`"${group.slice(0, 46)}" is registered but never sampled — the pool would filter a group that cannot go missing`);
+		}
+		if (entry.kind !== "channel-divergent") problems.push(`${group.slice(0, 30)}: unknown kind "${entry.kind}"`);
+		if (!entry.why || entry.why.length < 40) problems.push(`${group.slice(0, 30)}: the claim needs a checkable \`why\``);
+		if (!Array.isArray(entry.surfaces) || entry.surfaces.length === 0) {
+			problems.push(`${group.slice(0, 30)}: no surfaces named — a divergence with no successor is just a dead hash`);
+			continue;
+		}
+		for (const s of entry.surfaces) {
+			const npmText = npmTextByPackage[s.npmPackage];
+			if (npmText === undefined) {
+				problems.push(`${group.slice(0, 30)}: package ${s.npmPackage} not in the corpus — cannot check the npm half`);
+			} else if (!npmText.includes("." + s.npmBase + "_")) {
+				problems.push(`${group.slice(0, 30)}: ${s.npmPackage} draws no .${s.npmBase}_* — that is a DEAD hash (DEAD_HASHES), not a channel divergence`);
+			}
+			if (shellText.includes(s.npmBase)) {
+				problems.push(`${group.slice(0, 30)}: the shell DOES draw ${s.npmBase} — the divergence this entry excuses has stopped being true`);
+			}
+			const derived = moduleClassesInShell(shellText, s.module);
+			if (!derived) {
+				problems.push(`${group.slice(0, 30)}: the shell bundle has no "${s.module}" — the named successor module is gone`);
+			} else if (!derived.bases.has(s.shellBase)) {
+				problems.push(`${group.slice(0, 30)}: registry says ${s.module} is drawn as ${s.shellBase}_*, re-derived [${Array.from(derived.bases).join(",")}]`
+					+ " — the successor rolled and the excuse is now a stale copy");
+			}
+		}
+		if (entry.effect === "harmless") {
+			const need = entry.harmlessBecause;
+			if (!need || !need.module || !need.classSuffix || !need.mustNotDeclare) {
+				problems.push(`${group.slice(0, 30)}: claims "harmless" with no checkable harmlessBecause`);
+			} else {
+				for (const s of entry.surfaces) {
+					const rule = classRuleInShell(shellText, need.module, `${s.shellBase}_${need.classSuffix}`);
+					if (rule === null) {
+						problems.push(`${group.slice(0, 30)}: no declaration block for .${s.shellBase}_${need.classSuffix} in ${need.module} — cannot read the "nothing to undo" claim`);
+					} else if (rule.includes(need.mustNotDeclare)) {
+						problems.push(`${group.slice(0, 30)}: the shell now declares ${need.mustNotDeclare} on .${s.shellBase}_${need.classSuffix}`
+							+ " — losing our rule can change a pixel, so this is no longer harmless");
+					}
+				}
+			}
+		}
+	}
+	return problems;
+}
+
+/** A tiny synthetic world with the same SHAPE as the real one, so the legs below run anywhere. */
+function syntheticWorld(overrides = {}) {
+	const registry = overrides.registry || CHANNEL_DIVERGENT_GROUPS;
+	const npmTextByPackage = overrides.npmTextByPackage || {
+		// Every npm base the shipped registry names, drawn by the package it claims.
+		"dsh-client-ui-conversation": ".lXshSW_root{}._7yHdaG_panel{}.uV2eYG_root{}.uV2eYG_card{}"
+	};
+	const shellText = overrides.shellText || [
+		"//#region \\0dsh-css:D:\\x\\packages\\client\\ui-conversation\\src\\client\\skeleton\\TodoPanel.module.css.mjs",
+		"const css = \".aSus8q_root{display:flex}.aSus8q_body{}\";",
+		"//#region \\0dsh-css:D:\\x\\packages\\client\\ui-conversation\\src\\client\\queue\\QueueDock.module.css.mjs",
+		"const css$6 = \".v1kfCW_dock{box-sizing:border-box}.v1kfCW_panel{}\";",
+		"//#region \\0dsh-css:D:\\x\\packages\\client\\ui-conversation\\src\\client\\skeleton\\InputBar.module.css.mjs",
+		"const css$1 = \".RlGAzG_root{padding:0 8px 4px;display:flex}.RlGAzG_dock{}\";",
+		""
+	].join("\n");
+	const probesBlock = overrides.probesBlock || Object.keys(registry).join(", ");
+	return { registry, runtimeGroups: overrides.runtimeGroups || Object.keys(registry), probesBlock, npmTextByPackage, shellText };
+}
+
+test("A1: the channel-divergent registry is structurally sound on every machine (no corpus needed)", () => {
+	const problems = channelDivergentProblems(syntheticWorld());
+	assert.deepEqual(problems, [], "the shipped registry must satisfy its own rules against a corpus of the same shape:\n" + problems.join("\n"));
+	// Control: the world above is not vacuously clean — the same function reddens it below.
+});
+
+test("A1: every way the divergence claim can rot reddens the gate, and each one names itself", () => {
+	const legs = [];
+
+	// ① the bundle excuses a group the registry never reasoned about.
+	legs.push(["bundle and registry disagree", () => {
+		const w = syntheticWorld();
+		w.runtimeGroups = w.runtimeGroups.concat([".zz9Qq_root"]);
+		return channelDivergentProblems(w);
+	}, /!= registry/]);
+
+	// ② the registry keeps a group the probe table no longer samples — the excuse would
+	//    silently cover nothing, which is how a pool becomes a permission.
+	legs.push(["registered but never probed", () => {
+		const w = syntheticWorld();
+		w.probesBlock = ".bqrRRG_card";
+		return channelDivergentProblems(w);
+	}, /never sampled/]);
+
+	// ③ the npm half dies: a hash absent from BOTH channels is a dead hash, and dead hashes
+	//    owe their excuse to DEAD_HASHES with a different admission test.
+	legs.push(["npm half is actually dead", () => {
+		const w = syntheticWorld();
+		w.npmTextByPackage = { "dsh-client-ui-conversation": ".other_root{}" };
+		return channelDivergentProblems(w);
+	}, /DEAD hash/]);
+
+	// ④ the shell adopted our hash back — the divergence stopped being true.
+	legs.push(["shell draws the npm hash again", () => {
+		const w = syntheticWorld();
+		w.shellText = w.shellText + "\n.lXshSW_root{color:red}";
+		return channelDivergentProblems(w);
+	}, /the shell DOES draw/]);
+
+	// ⑤ the successor rolled: the recorded base is now a stale copy of a fact nobody re-read.
+	legs.push(["successor base rolled", () => {
+		const w = syntheticWorld();
+		w.shellText = w.shellText.replace(/aSus8q_/g, "q7Zz0a_");
+		return channelDivergentProblems(w);
+	}, /re-derived/]);
+
+	// ⑥ the "harmless" claim rots: the host starts declaring the property our rule clears.
+	legs.push(["harmless claim contradicted", () => {
+		const w = syntheticWorld();
+		w.shellText = w.shellText.replace(".RlGAzG_root{padding:0 8px 4px;display:flex}",
+			".RlGAzG_root{background:var(--dsw-specific-menu);padding:0 8px 4px}");
+		return channelDivergentProblems(w);
+	}, /can change a pixel/]);
+
+	// ⑦ an entry that claims harmlessness with nothing behind it.
+	legs.push(["harmless without evidence", () => {
+		const w = syntheticWorld();
+		const clone = JSON.parse(JSON.stringify(w.registry));
+		delete clone[".uV2eYG_root"].harmlessBecause;
+		w.registry = clone;
+		return channelDivergentProblems(w);
+	}, /no checkable harmlessBecause/]);
+
+	for (const [label, mutate, expect] of legs) {
+		const problems = mutate();
+		assert.ok(problems.length > 0, `mutation "${label}" produced NO problem — the gate cannot see this rot`);
+		assert.ok(problems.some((p) => expect.test(p)),
+			`mutation "${label}" reddened, but not for the reason it claims: ${JSON.stringify(problems)}`);
+	}
+});
+
+test("A1: the registry's claims re-derive against the real npm install and the real shell bytes", (t) => {
+	// `findHostRoot()` THROWS when there is no install, and the `skip:` option is evaluated at
+	// LOAD time — a throwing skip there takes the whole file down with it (measured: the
+	// no-host shape run lost 14 cases and reddened `docs.numbers`, which loads every test file
+	// to count them). Same lesson as 10.10.0's CI debut, growing on the new gate a second time:
+	// "the environment does not have it" and "the check failed" are two exits, and the skip has
+	// to be taken INSIDE the body.
+	const missing = [];
+	let root = null;
+	try {
+		root = findHostRoot();
+	} catch (e) {
+		missing.push(`no installed DSH host (${e.message.split("\n")[0]})`);
+	}
+	if (!findShellAsar()) missing.push("no official desktop shell app.asar");
+	if (missing.length) {
+		t.skip(`${missing.join(" and ")} — the structural legs above ran; the cross-channel measurement could not`);
+		return;
+	}
+	const pkgs = [...new Set(Object.values(CHANNEL_DIVERGENT_GROUPS).flatMap((e) => e.surfaces.map((s) => s.npmPackage)))];
+	const npmTextByPackage = {};
+	for (const p of pkgs) {
+		const f = path.join(root, p, "lib", "client.js");
+		assert.ok(fs.existsSync(f), `the registry names npm package ${p} but it is not installed — re-measure before this sentence stays`);
+		npmTextByPackage[p] = fs.readFileSync(f, "utf8");
+	}
+	const shellText = readShellAsar();
+	assert.ok(shellText && shellText.length > 1e7, `the shell bundle read suspiciously small (${shellText && shellText.length} bytes)`);
+	const bundle = readReal(path.join(ROOT, "lib", "client.js"));
+	const probes = bundle.match(/const MATERIAL_SELECTOR_PROBES = \[([\s\S]*?)\];/);
+	assert.ok(probes, "the probe table must still be readable by this gate");
+	const runtime = bundle.match(/const CHANNEL_DIVERGENT_PROBE_GROUPS = \[([\s\S]*?)\];/);
+	assert.ok(runtime, "lib/client.js must declare CHANNEL_DIVERGENT_PROBE_GROUPS (the drift classifier reads it)");
+	const runtimeGroups = [...runtime[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]);
+
+	const problems = channelDivergentProblems({
+		registry: CHANNEL_DIVERGENT_GROUPS,
+		runtimeGroups,
+		probesBlock: probes[1],
+		npmTextByPackage,
+		shellText
+	});
+	assert.deepEqual(problems, [], "the shipped registry must survive re-derivation against both real corpora:\n" + problems.join("\n"));
+
+	// And the measurement has to be a MEASUREMENT: name the bases out loud so a reader can
+	// re-run them, rather than trusting the table's own words.
+	for (const [group, entry] of Object.entries(CHANNEL_DIVERGENT_GROUPS)) {
+		for (const s of entry.surfaces) {
+			const derived = moduleClassesInShell(shellText, s.module);
+			assert.equal(derived.bases.size, 1, `${s.module}: the shell must draw this module under exactly one base, got ${[...derived.bases].join(",")}`);
+			assert.equal([...derived.bases][0], s.shellBase, `${group}: ${s.module} successor`);
+			console.log(`channel-divergent: ${s.npmPackage} .${s.npmBase}_* (npm) -> .${s.shellBase}_* (shell) for ${s.module}`);
+		}
+	}
+});

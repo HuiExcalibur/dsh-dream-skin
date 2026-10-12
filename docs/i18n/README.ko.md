@@ -294,7 +294,7 @@ dsh web   # restores the official appearance
 | DeepSeek Harness (`dsh`) | **하나의 빌드로 두 세대의 호스트 모두 지원**: 안정版 `0.1.0-rc.6` / `0.1.1-rc.x` (peerDependencies가 `^0.1.0-rc.6`으로 고정됨) 및 DSH master (분할 후 모듈 테이블). **호스트 업그레이드 후 플러그인은 설치된 것으로 표시되는데 skin이 사라졌나요?** 대부분 peer 윈도우가 번들 전체를 건너뛰게 한 것입니다 — 비상 탈출구: `dsh plugin allow-version dsh-dream-skin@<버전> <호스트 런타임 버전>` (테스트되지 않은 조합을 강제로 통과시키는 **본인 책임의 명시적 재정의** — 권장 방법이 아님); 증상 진단과 전체 절차는 [docs/desktop-support.md](../desktop-support.md) 에서 |
 | Node.js | `>=18` |
 | 브라우저 | 최신 Chromium / WebKit (네이티브 CSS variables & `matchMedia`) |
-| 데스크톱 | **서드파티 DSH Desktop 셸:** 적용 완료, 실기 검증(issue #50/#51/#55). **공식 DSH Desktop:** 근거가 뒷받침하는 것은 "**로드될 것으로 예상**"이지 "지원"이 아닙니다 — 근거는 정적 사실 두 가지뿐입니다(동일 Electron 프런트엔드, 당사가 선언한 `dsh.client.platform = "web"`이 호스트가 함께 배포하는 21개 클라이언트 패키지와 일치). 그 프로필 디렉터리와 설치 명령은 **이 장비에서 한 번도 검증되지 않았으므로**, 이 문서는 **복사해서 쓸 수 있는 데스크톱 설치 명령을 제공하지 않습니다**. <!-- desktop-claim: load-expected-unverified -->추가할 때 `--profile` 값은 호스트가 **직접 제공하는** 템플릿 이름이어야 합니다. 일부 서드파티 문서가 알려주는 프로필 이름은 이 호스트에 없으며, 그대로 복사하면 빈 셸 프로필에 설치되어 다시 시작한 뒤 아무것도 보이지 않습니다. 근거는 **[docs/desktop-support.md](../desktop-support.md)** 의 "공식 데스크톱: 미검증 항목"을 참조하세요. 전체 앵커 의존 목록 / 보안 경계 / 검증-미검증 목록도 같은 문서 |
+| 데스크톱 | **서드파티 DSH Desktop 셸:** 적용 완료, 실기 검증(issue #50/#51/#55). **공식 DSH Desktop:** 근거가 뒷받침하는 것은 "**로드될 것으로 예상**"이지 "지원"이 아닙니다 — 근거는 정적 사실 두 가지뿐입니다(동일 Electron 프런트엔드, 당사가 선언한 `dsh.client.platform = "web"`이 호스트가 함께 배포하는 21개 클라이언트 패키지와 일치). 그 프로필 디렉터리와 "셸이 이 플러그인을 불러온다는 사실"은 이 장비에서 실측했다(`~/.dsh/profiles/desktop` 에 설치, 사용자가 셸을 재시작한 뒤 로드, 동작 중인 페이지에서 당사 stylesheet 를 읽음 — `docs/publishing-to-npm.md` 8.4 및 `docs/desktop-support.md` 참조). 그러나 **설정이 재시작을 걸쳐 유지되는지는 이 장비에서 한 번도 검증되지 않았으므로**, 이 문서는 **복사해서 쓸 수 있는 데스크톱 설치 명령을 제공하지 않습니다**. <!-- desktop-claim: load-expected-unverified -->추가할 때 `--profile` 값은 호스트가 **직접 제공하는** 템플릿 이름이어야 합니다. 일부 서드파티 문서가 알려주는 프로필 이름은 이 호스트에 없으며, 그대로 복사하면 빈 셸 프로필에 설치되어 다시 시작한 뒤 아무것도 보이지 않습니다. 근거는 **[docs/desktop-support.md](../desktop-support.md)** 의 "공식 데스크톱: 미검증 항목"을 참조하세요. 전체 앵커 의존 목록 / 보안 경계 / 검증-미검증 목록도 같은 문서 |
 
 > DSH를 업그레이드할 때 `package.json`의 peerDependencies도 그에 맞게 올려주세요.
 
@@ -385,7 +385,7 @@ skin이 밝은 쪽 상수를 집어 갔습니다. alias-token 오버라이드는
 *동기: `0.2.0-rc.1`에서 실측한 6개 호스트 앵커 그룹 중 4개가 흔들렸습니다 — 그중 3개는 해시 재생성이 확인된 그룹, 1개(`lXshSW_*`)는 호스트 CSS가 남아 있고 면이 마운트되지 않았을 뿐인 그룹(10.5.0부터 `notMounted`로 분리). 사용자 쪽 체감은 issue #62의 "하룻밤 사이에 스킨이 전부 사라졌다"였습니다.*
 
 - [ ] **M** 호스트의 해시 클래스명 의존을 마지막까지 걷어내기: 남은 장식 규칙(사이드바 / 파일 패널)도 자체 `data-dsh-dream-skin-*` 마커로 옮깁니다 — composer와 nav-icon이 이 길은 걸릴 수 있음을 이미 증명했습니다
-      — 검수: 0.2.x에서 드리프트 탐지가 `drifted: [] && pending: false`를 내놓는다
+      — 검수: 0.2.x에서 드리프트 탐지가 `drifted: [] && notMounted: [] && channelAbsent: [] && pending: false`를 내놓는다(각 풀의 판독 기준은 docs/desktop-support.md)
 - [ ] **S** "호스트 rc 사전 점검"을 릴리스 절차로 굳히기: 새 rc가 나온 당일에 호환성 판정표를 한 번, 실제 profile 불러오기를 한 번 돌립니다
 - [ ] **M** peer 창을 `0.3.x`로 굴려 열기 — **상류에서 막혀 있어서, 우리 쪽 문제가 아닙니다**: 2026-10-10 기준으로 registry의 `@deepseek-ai/dsh` `latest`는 `0.2.0-rc.2`이고 버전 목록은 `0.2.1-alpha.2`에서 끝납니다. `0.3.x`는 한 번도 발표된 적이 없습니다(`npm view @deepseek-ai/dsh versions --json`). 맞춰야 할 대상 버전이 없으므로 이 항목은 시작도 검증도 불가능합니다 — 위 호환성 표에 적힌 현재 peer 창은 호스트가 지금까지 공개한 **모든** 버전을 이미 덮고 있습니다.
       — 검수: 호스트가 실제로 0.3.x를 내놓은 뒤에 호환성 판정표를 한 번, 실제 profile 불러오기를 한 번 돌리고 통과해야만 창을 넓힙니다. 넓히지 못한다면 "미지원"을 문서에 명시하고, 조용히 건너뛰는 상태로는 절대 두지 않습니다

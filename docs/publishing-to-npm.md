@@ -78,7 +78,7 @@ dsh plugin --profile web add dsh-dream-skin
 > 本地开发测试同理：`dsh plugin --profile web add -w /path/to/dsh-dream-skin`。
 >
 > 刚发出去的那 24 小时内，上面这条裸 `add` 会**静默装到上一个成熟版本**（无报错、退出码 0），成因与实测
-> 输出见第八节 8.3(a)；给用户抄的命令一律带确切版本号（`README.md:178-181`、`README.md:213-218` 同口径）。
+> 输出见第八节 8.3(a)；给用户抄的命令一律带确切版本号（`README.md` 的「安装」一节（方式一 / 方式二的命令都写死版本号）与「更新 / 卸载」一节同口径）。
 
 ## 五、常见注意事项
 
@@ -135,7 +135,7 @@ dsh plugin --profile web add dsh-plugin-check
 
 ## 八、发布后：从公共 registry 真装一次（临时 profile）
 
-**为什么必须有这一步**：本机此前每一次"已验证安装"都是 `link:` 工作区安装——`docs/desktop-support.md:272`
+**为什么必须有这一步**：本机此前每一次"已验证安装"都是 `link:` 工作区安装——`docs/desktop-support.md` 的「已验证 / 未验证（诚实清单）」一节里「npm 正式包的安装期闸门路径」那一条
 把这条欠账写得很清楚（"本机是 `link:` 工作区安装……这一条已在 2026-09-29 实机跑到"）。`link:` 装的是磁盘上的
 工作树，它**结构上**碰不到三样东西：npm 的 tarball 与 `files` 白名单（第一节）、registry 的读写同步、
 pnpm 的发布冷静期（8.3）。所以"本地装好了 + `npm test` 绿 + publish 退出 0"这三件事加起来，仍然推不出
@@ -181,9 +181,9 @@ pnpm add dsh-dream-skin@<确切版本号>          # 24 小时窗口内还要带
 
 **8.3 pnpm 的 24 小时冷静期：两种行为，报错形状和处置都不一样**
 
-pnpm 11 的默认冷静期是 24 小时（这个数记在 `README.md:268`；本机**没有**单独验默认值，下面的复现都是把窗口
+pnpm 11 的默认冷静期是 24 小时（这个数记在 `README.md` 的「更新 / 卸载」一节；本机**没有**单独验默认值，下面的复现都是把窗口
 显式拉大，见每条括号里的分钟数）。`pnpm config get minimumReleaseAge` 返回 `undefined`（2026-10-10 本机复测）
-**不影响**策略生效——"我没配过这个策略"不是排除理由（这条与 `docs/desktop-support.md:265`
+**不影响**策略生效——"我没配过这个策略"不是排除理由（这条与 `docs/desktop-support.md` 的「已验证 / 未验证（诚实清单）」一节里「安装期闸门实机复现与规避」那一条
 同口径，那里还钉着 `.npmrc` 写 `minimum-release-age=0` **无效**、只有 CLI 形态被证实）。下面 (a)(b) 两次都在
 一次性目录里实跑过，差别必须分清：
 
@@ -202,7 +202,7 @@ $ node -p "require('./node_modules/dsh-dream-skin/package.json').version"
 10.8.1                               ← 退出码 0，无 error 行
 ```
 
-**这就是每一条发布出去的安装命令都必须写死确切版本号的原因**（`README.md:178-181`、`README.md:268-274`）。
+**这就是每一条发布出去的安装命令都必须写死确切版本号的原因**（`README.md` 的「安装」一节与「更新 / 卸载」一节）。
 写死版本号之后，默认策略下 pnpm 会自己把它记进豁免表并装对（实测输出：`Added 1 entry to minimumReleaseAgeExclude
 in pnpm-workspace.yaml (set minimumReleaseAgeStrict to true to gate these updates with a prompt)` + `+ dsh-dream-skin 10.9.3`，
 `Done in 2.3s`）；**pnpm 在什么条件下写这张表本机没有定位**，带 `--config.minimumReleaseAge=0` 的那几次它就没写
@@ -231,7 +231,7 @@ within the minimumReleaseAge cutoff (…)` —— `add` 的解析步骤不读那
 pnpm add dsh-dream-skin@<确切版本号> --config.minimumReleaseAge=0
 ```
 
-→ `+ dsh-dream-skin 10.9.3`、退出码 0、8.5 的三读数全对（2026-10-10 本机实跑）。这条与 `docs/desktop-support.md:265`
+→ `+ dsh-dream-skin 10.9.3`、退出码 0、8.5 的三读数全对（2026-10-10 本机实跑）。这条与 `docs/desktop-support.md` 的「已验证 / 未验证（诚实清单）」一节里「安装期闸门实机复现与规避」那一条
 记的"对照实验：`--config.minimumReleaseAge=0` 同样放行（备选手段）"一致。
 
 **8.4 官方桌面 profile：命令行指过去会被硬拒，只有两条路**
@@ -243,8 +243,8 @@ pnpm add dsh-dream-skin@<确切版本号> --config.minimumReleaseAge=0
 `error: profile "desktop" is managed exclusively by the Electron application`——本机在
 `%APPDATA%\npm\node_modules\@deepseek-ai\dsh\lib\bin.js` 读到该分支
 （`if (profile.toLowerCase() === "desktop") program.error(…)`）。**本文件不给出那条命令的形状**：照着敲只会得到
-同一句拒绝，而拒绝里没有任何信息告诉用户该走哪条路。完整的成因、证据与告警写法在 `docs/desktop-support.md:243`；
-README 侧同一事实见 `README.md:327`。走得通的两条，装完都要按 8.5 验：
+同一句拒绝，而拒绝里没有任何信息告诉用户该走哪条路。完整的成因、证据与告警写法在 `docs/desktop-support.md` 的「官方桌面版：待验条目与判断依据（issue #87）」一节；
+README 侧同一事实见 `README.md` 的「兼容性」表里桌面端那一行。走得通的两条，装完都要按 8.5 验：
 
 1. 应用内的插件管理界面（该 profile 目录下的 `.plugin-manager/logs` 是它的痕迹，本机实存）；
 2. 在该 profile 目录里手工 `pnpm add dsh-dream-skin@<确切版本号>`。本机现状即这条的产物：
@@ -294,7 +294,7 @@ dsh --profile web --dump-config | grep -A2 dream-skin
 ```
 （第二段是本机实跑输出，逐字。）
 
-这条只证明**宿主打算载它**，不证明渲染进程里真挂载了——口径见 `docs/desktop-support.md:273`（"验证止于安装期放行
+这条只证明**宿主打算载它**，不证明渲染进程里真挂载了——口径见 `docs/desktop-support.md` 的「已验证 / 未验证（诚实清单）」一节（"验证止于安装期放行
 + `--dump-config` 里出现 `- id: dream-skin` 条目"）。运行期证据是页面里的 `window.__DSH_DREAM_SKIN_STATUS__`
 （其 `build` 就是 `lib/client.js` 顶部的 `PLUGIN_BUILD`），官方桌面壳上读到过 `build:"10.9.1"` / `"10.9.2"`，
 但那属于第九节的分诊材料，不是本文件能替下一次发布担保的东西。
@@ -309,9 +309,9 @@ node -e "const s=require(process.env.APPDATA+'/npm/node_modules/@deepseek-ai/dsh
 # false true     ← 2026-10-10 本机实跑：^9.29.0 收不到 10.9.3，^10.9.0 收得到
 ```
 
-`dsh plugin update` 会不会跨大版本把它抬上去——**这一半本机未证**，`CHANGELOG.md:147` 写得很明白（"本机 0.2.0-rc.1
-的 CLI 里没定位到可复核的实现，蓝军同样没定位到，本版不替它背书"），`CHANGELOG.md:88` 与 `docs/desktop-support.md:246`
+`dsh plugin update` 会不会跨大版本把它抬上去——**这一半本机未证**，`CHANGELOG.md` 的 10.9.1 版块「报告人需要自己抬版本」那条写得很明白（"本机 0.2.0-rc.1
+的 CLI 里没定位到可复核的实现，蓝军同样没定位到，本版不替它背书"），`CHANGELOG.md` 的 10.9.1 版块与 `docs/desktop-support.md` 的「已验证 / 未验证（诚实清单）」一节
 只是那样记的。所以处置顺序是：**先读用户那份 `node_modules/dsh-dream-skin/package.json` 的版本号**（8.5 的第一条
-读数），再谈修复有没有效——10.9.1 / 10.9.2 两轮里报告人看到的那两处旧缺陷正是"版本没到"，而 `CHANGELOG.md:88`、
-`docs/desktop-support.md:246` 都记着"本版对它们没有改代码"：那种报告按第八节的安装路径送达新版即可结案，
+读数），再谈修复有没有效——10.9.1 / 10.9.2 两轮里报告人看到的那两处旧缺陷正是"版本没到"，而 `CHANGELOG.md` 的 10.9.1 版块、
+`docs/desktop-support.md` 的「已验证 / 未验证（诚实清单）」一节都记着"是版本没到，不是修复无效"：那种报告按第八节的安装路径送达新版即可结案，
 不该开新的修复轮。

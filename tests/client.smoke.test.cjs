@@ -4713,12 +4713,17 @@ test('drift probe (A-1): full host match converges to a conclusive zero-drift ve
 test('drift probe (A-1): one replaced anchor group is reported as exactly that group', async () => {
 	// A-1 acceptance case ③ (web variant): seven host groups mount (liveness
 	// proven), the eighth never appears — drifted must contain EXACTLY that
-	// group's raw selector, nothing else. The group under test is `.uV2eYG_root`,
-	// a LIVE anchor: since J1 (10.8.0) the three retired 0.1.x hashes go to their
-	// own pool and can no longer be used as a stand-in for "the host re-rolled a
-	// hash we still depend on".
+	// group's raw selector, nothing else.
+	//
+	// The group under test is `[class$="_fade"]`, and the choice is forced rather than
+	// stylistic: after A1 registered `.lXshSW_root, ._7yHdaG_panel` and `.uV2eYG_root`
+	// as channel-divergent, EVERY class-anchored probe group is in some registry (three
+	// retired, two channel-divergent), so the only groups that can still legitimately
+	// read as drift are the hash-free ones. That is the shape of the contract now, and
+	// `tests/hashes.test.cjs` reddens if a future group joins the shipped table without
+	// saying which pool it belongs to.
 	const warns = [];
-	const driftedSel = '.uV2eYG_root';
+	const driftedSel = '[class$="_fade"]';
 	const doc = {
 		body: makeEl(), createElement: () => makeEl(), createTextNode: () => ({}),
 		querySelector: (sel) => (sel === driftedSel ? null : { matched: true }),
@@ -4975,16 +4980,22 @@ test('drift probe (T3): a group the HOST CSS still owns is notMounted, not drift
 	assert.equal(t0.anchors.pending, false, 'terminal verdict reached (liveness via the mounted groups)');
 	assert.deepEqual(t0.anchors.notMounted, ['.lXshSW_root, ._7yHdaG_panel'],
 		'the group the host CSS still owns reads notMounted — a healthy host that never opened that surface');
-	assert.deepEqual(t0.anchors.drifted, ['.uV2eYG_root'],
-		'a live group our own sheet mentions but no HOST sheet vouches for stays drifted');
+	assert.deepEqual(t0.anchors.channelAbsent, ['.uV2eYG_root'],
+		'A1: a registered group no HOST sheet vouches for is channel-absent — and crucially NOT notMounted. '
+		+ 'Our own sheet really does mention it (the material rule), so this is still the M21 differential: drop '
+		+ 'the [data-plugin-css] qualifier and our stylesheet would vouch for our own selector and read healthy.');
+	assert.deepEqual(t0.anchors.drifted, [],
+		'nothing unexplained is left: every missing group is accounted for by ownership, retirement, or a dated divergence measurement');
 	assert.deepEqual(t0.anchors.retired.sort(), RETIRED.slice().sort(),
 		'J1: the three anchors kept only for the unmeasured 0.1.x line get their own pool');
 	assert.equal(warns.filter((w) => w.includes('bqrRRG') || w.includes('nArs4W') || w.includes('qDHVXG')).length, 0,
 		'J1: retired anchors never reach the human alarm — on a healthy modern host it would fire on every page load');
 	const driftWarns = warns.filter((w) => w.includes('drifted'));
-	assert.equal(driftWarns.length, 1, 'the drift warn fires once for the renamed live hash');
-	assert.ok(driftWarns[0].includes('.uV2eYG_root'), 'the warn names the drifted group');
-	assert.ok(!driftWarns[0].includes('lXshSW'), 'an unmounted-but-owned surface is NOT an alarm');
+	assert.equal(driftWarns.length, 0,
+		'A1: a channel-divergent hash must not reach the human alarm any more than an unmounted surface may — '
+		+ 'warning on it would fire on every page load of the official desktop shell, which is the J1 mistake reborn');
+	assert.ok(!warns.some((w) => w.includes('uV2eYG')), 'the registered group is machine-readable, not shouted about');
+	assert.ok(!warns.some((w) => w.includes('lXshSW')), 'an unmounted-but-owned surface is NOT an alarm');
 	assert.ok(observers.length >= 1, 'late-correction observer armed after a drifted terminal');
 });
 
@@ -5003,14 +5014,17 @@ test('drift probe (T3): a surface mounting late leaves the notMounted pool throu
 	// `[data-plugin-css]` qualifier.
 	ourSheet.textContent = '.uV2eYG_root{backdrop-filter:blur(1px)}';
 	const LATE_GROUP = '.lXshSW_root, ._7yHdaG_panel';
+	// The drifted stand-in here is `[class$="_fade"]`, deliberately LEFT unmounted by this
+	// fixture: after A1 every class-anchored group is in some registry, so the only way to
+	// keep a real `drifted` entry — and therefore keep the "warns once, never repeats" leg
+	// from going vacuous — is to withhold a hash-free anchor whose token the host sheet
+	// above (`.lXshSW_root` only) genuinely does not declare.
+	const DRIFTED_GROUP = '[class$="_fade"]';
 	const MOUNTED = new Set([
 		SIDEBAR_PROBE_SEL,
-		// Issue #96/#97: the two hash-free anchors mount on any ordinary page (the
-		// AppFrame is the app root, the session-list fade ships with the list), so
-		// this fixture mounts them too — their classification path when they are
-		// ABSENT has its own gate further down.
-		'div:has(> [data-shell-overlay])',
-		'[class$="_fade"]'
+		// Issue #96/#97: the AppFrame anchor mounts on any ordinary page, so this fixture
+		// mounts it — its classification path when ABSENT has its own gate further down.
+		'div:has(> [data-shell-overlay])'
 	]);
 	const observers = [];
 	class FakeMO {
@@ -5033,8 +5047,10 @@ test('drift probe (T3): a surface mounting late leaves the notMounted pool throu
 	await settleDrift(h.window);
 	const t0 = h.window.__DSH_DREAM_SKIN_STATUS__;
 	assert.deepEqual(t0.anchors.notMounted, [LATE_GROUP], 'terminal snapshot names the unmounted group');
-	assert.deepEqual(t0.anchors.drifted, ['.uV2eYG_root'],
-		'the one live renamed hash is the whole drift list — J1 retired anchors do not join it');
+	assert.deepEqual(t0.anchors.drifted, [DRIFTED_GROUP],
+		'the one unaccounted group is the whole drift list — J1 retired anchors and A1 channel-divergent anchors do not join it');
+	assert.deepEqual(t0.anchors.channelAbsent, ['.uV2eYG_root'],
+		'A1: the registered hash sits in its own pool while the unregistered anchor above stays in drifted');
 	assert.equal(warns.filter((w) => w.includes('drifted')).length, 1, 'terminal drift warns once');
 	// User opens the surface "a minute later": the group mounts, DOM mutates.
 	MOUNTED.add(LATE_GROUP);
@@ -5067,7 +5083,10 @@ test('drift probe (R-4): the ladder array is RELATIVE gaps — an early terminal
 	// go red. Margins are ≥250ms on both sides so a loaded runner cannot flip it.
 	const code = CODE.replace('[0, 300, 1000, 3000]', '[0, 400, 400, 400]');
 	if (code === CODE) throw new Error('ladder anchor moved — update the R-4 semantics test');
-	const driftedSel = '.uV2eYG_root';
+	// `[class$="_fade"]` and not a hashed group: since A1 every class-anchored probe group is
+	// registered (retired or channel-divergent), so this is the only way to keep a real
+	// `drifted` entry for the ladder's mid/terminal contrast to be about.
+	const driftedSel = '[class$="_fade"]';
 	const warns = [];
 	const doc = {
 		body: makeEl(), createElement: () => makeEl(), createTextNode: () => ({}),
@@ -5151,7 +5170,7 @@ test('drift probe (S-3): fiber unload disarms the late-correction observer and f
 	let mounted = false;
 	const doc = {
 		body: makeEl(), createElement: () => makeEl(), createTextNode: () => ({}),
-		querySelector: (sel) => (((sel === SIDEBAR_PROBE_SEL || sel === '.uV2eYG_root') && !mounted) ? null : { matched: true }),
+		querySelector: (sel) => (((sel === SIDEBAR_PROBE_SEL || sel === '[class$="_fade"]') && !mounted) ? null : { matched: true }),
 		querySelectorAll: () => [], head: makeEl()
 	};
 	const observers = [];
@@ -5194,7 +5213,7 @@ test('drift probe (S-3): a re-applied probe supersedes the live observer instead
 	// single-owner handle a second chain could arm a second body observer while
 	// the first is still live (two independent samplers, ~7.5s of sampling each).
 	const lateMOs = (observers, baseLen, doc) => observers.slice(baseLen).filter((o) => o.target === doc.body);
-	const missing = '.uV2eYG_root';
+	const missing = '[class$="_fade"]';
 	let mounted = false;
 	const doc = {
 		body: makeEl(), createElement: () => makeEl(), createTextNode: () => ({}),
@@ -6527,4 +6546,155 @@ test('#79: the legacy-glow constants are load-bearing (a wrong prefix disables t
 	assert.equal(h.localStorage.getItem(GLOW_KEY), legacy,
 		'with a broken fingerprint the repair must NOT fire — that is what the constants are for, and a green run here would mean the case passes for some other reason');
 	assert.notEqual(h.localStorage.getItem(GLOW_FOLLOWS_KEY), '1', 'and it must not claim the background follows the skin');
+});
+
+// ---------------------------------------------------------------------------
+// A1 — the channel-divergent pool
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a `const NAME = [ "…" ]` array literal out of the SHIPPED bundle.
+ *
+ * These fixtures used to paste probe selectors as literals, which meant a rename in
+ * lib/client.js silently retargeted the test instead of reddening it. The pools are the
+ * contract now, so the test asks the bundle which groups are in them.
+ */
+const codeArrayConst = (name) => {
+	const m = new RegExp(String.raw`const ${name} = \[([\s\S]*?)\];`).exec(CODE);
+	if (!m) throw new Error(`${name} moved out of lib/client.js — the pool fixture cannot name it`);
+	return [...m[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((x) => x[1].replace(/\\"/g, '"'));
+};
+
+const runPoolFixture = ({ hostCss, mounted }) => {
+	const hostSheet = makeEl();
+	hostSheet.textContent = hostCss;
+	const doc = {
+		body: makeEl(), createElement: () => makeEl(), createTextNode: () => ({}), head: makeEl(),
+		querySelector: (sel) => (mounted.has(sel) ? { matched: true } : null),
+		querySelectorAll: (sel) => (hostCss === null ? [] : (sel === 'style[data-plugin-css]' ? [hostSheet] : []))
+	};
+	return doc;
+};
+
+test('drift probe (A1): a shell-shaped page can finally reach drifted: [] with the divergent hashes named', async () => {
+	// The whole point of the pool: docs/desktop-support.md teaches tooling that
+	// `drifted: [] && pending: false` is the ONLY positive "all refinements live" signal,
+	// and on the official desktop shell it was unreachable — the shell re-rolls the
+	// conversation-package hashes independently of npm, so two live anchors could only ever
+	// be missing there. This fixture is that page: the divergent hashes and the retired ones
+	// are absent from both the DOM and the host CSS, and the hash-free anchors mount.
+	const DIVERGENT = codeArrayConst('CHANNEL_DIVERGENT_PROBE_GROUPS');
+	const RETIRED = codeArrayConst('RETIRED_PROBE_GROUPS');
+	assert.equal(DIVERGENT.length, 2, 'two groups are registered as channel-divergent (todo/queue frosting + composer root)');
+	for (const sel of DIVERGENT) assert.ok(!RETIRED.includes(sel), `${sel}: one group cannot sit in two pools at once`);
+
+	const mounted = new Set([SIDEBAR_PROBE_SEL, 'div:has(> [data-shell-overlay])', '[class$="_fade"]']);
+	const doc = runPoolFixture({
+		hostCss: '._2H3hWW_footArea{display:flex}._2H3hWW_regionArea{margin-left:-4px}._2H3hWW_root{color:red}',
+		mounted
+	});
+	const warns = [];
+	const h = buildSandbox({ code: FAST_DRIFT_CODE, document: doc, console: { warn: (...a) => warns.push(a.join(' ')), log() {}, error() {} } });
+	h.factory(makeRequire(makeRuntime().RT)).apply(makeApplyContext(h));
+	await settleDrift(h.window);
+	const a = h.window.__DSH_DREAM_SKIN_STATUS__.anchors;
+	assert.equal(a.pending, false, 'liveness proven, so this is a verdict rather than a shrug');
+	assert.deepEqual(a.drifted, [], 'A1 acceptance: nothing unexplained is left on a shell-shaped page');
+	assert.deepEqual(a.channelAbsent.slice().sort(), DIVERGENT.slice().sort(),
+		'the two hashes this repository measured as npm-only land in their own pool, named');
+	assert.deepEqual(a.notMounted, [], 'no surface is claimed healthy-unmounted that the host does not declare');
+	assert.deepEqual(a.retired.slice().sort(), RETIRED.slice().sort(), 'J1 pool unchanged');
+	// docs/desktop-support.md promises BOTH explained pools never reach the alarm — that
+	// sentence is a contract with whoever reads the console, so it is asserted here rather
+	// than inferred from the `terminalDrift.length > 0` guard. On this page `drifted` is
+	// empty, so the whole warn must be silent; and no explained absence may show up in a
+	// warning line even if a future change makes the alarm fire for another reason.
+	assert.deepEqual(warns.filter((w) => w.includes('drifted')), [],
+		'an all-explained terminal verdict must not console.warn about drift');
+	for (const sel of [...DIVERGENT, ...RETIRED]) {
+		assert.ok(!warns.some((w) => w.includes(sel)), `${sel}: an explained absence may never appear in the alarm`);
+	}
+});
+
+test('drift probe (A1): when a real drift does fire the alarm, the explained pools are not in its list', async () => {
+	// The doc promises `retired` and `channelAbsent` never reach the console alarm. On an
+	// all-explained page that promise is unfalsifiable — the alarm is gated on a non-empty
+	// `drifted` TWICE (the latch, then the print), so a mutation that only widens those guards
+	// changes nothing observable (measured: two such mutations stayed green). What a reader of
+	// the console CAN see is the printed list, so this fixture mixes one genuinely renamed
+	// anchor with the two registered ones: the alarm must name the drift and stay shut about
+	// the explained absences.
+	const DIVERGENT = codeArrayConst('CHANNEL_DIVERGENT_PROBE_GROUPS');
+	const RETIRED = codeArrayConst('RETIRED_PROBE_GROUPS');
+	const footGroup = SIDEBAR_PROBE_SEL;
+	assert.ok(!DIVERGENT.includes(footGroup) && !RETIRED.includes(footGroup),
+		'the fixture needs an unregistered, un-retired group to rename');
+	const mounted = new Set(['div:has(> [data-shell-overlay])', '[class$="_fade"]']);
+	// Host CSS with no `_footArea` class selector at all (so the suffix anchor reads as
+	// renamed, not unmounted) and none of the registered tokens.
+	const doc = runPoolFixture({ hostCss: '._9xAbC_somethingElse{color:red}', mounted });
+	const warns = [];
+	const h = buildSandbox({ code: FAST_DRIFT_CODE, document: doc, console: { warn: (...a) => warns.push(a.join(' ')), log() {}, error() {} } });
+	h.factory(makeRequire(makeRuntime().RT)).apply(makeApplyContext(h));
+	await settleDrift(h.window);
+	const a = h.window.__DSH_DREAM_SKIN_STATUS__.anchors;
+	assert.deepEqual(a.drifted, [footGroup], 'the renamed hash-free anchor is the one real drift here');
+	assert.deepEqual(a.channelAbsent.slice().sort(), DIVERGENT.slice().sort(), 'the registered pair still reads as channel-absent');
+	const alarm = warns.filter((w) => w.includes('drifted'));
+	assert.equal(alarm.length, 1, 'a genuine drift warns exactly once');
+	assert.ok(alarm[0].includes(footGroup), 'and it names the drifted group');
+	for (const sel of [...DIVERGENT, ...RETIRED]) {
+		assert.ok(!alarm[0].includes(sel), `${sel}: explained absences must not be smuggled into the drift alarm`);
+	}
+});
+
+test('drift probe (A1): host ownership OUTRANKS the registry — a still-declared hash is notMounted, not channel-absent', async () => {
+	// The precedence this pool could easily have broken: "this channel rolled the hash" is a
+	// claim ABOUT the host, and a host whose own CSS still declares the token contradicts it.
+	// Filing that as channel-absent would be a false statement dressed as a documented one —
+	// the registry outvoting the evidence, which is the same mistake shape as a fallback value
+	// vouching for itself.
+	const DIVERGENT = codeArrayConst('CHANNEL_DIVERGENT_PROBE_GROUPS');
+	const composerGroup = '.uV2eYG_root';
+	assert.ok(DIVERGENT.includes(composerGroup), 'the fixture targets a registered group, or this test proves nothing');
+	const mounted = new Set([SIDEBAR_PROBE_SEL, 'div:has(> [data-shell-overlay])', '[class$="_fade"]']);
+	const doc = runPoolFixture({ hostCss: '.uV2eYG_root{padding:0}._2H3hWW_root{color:red}', mounted });
+	const h = buildSandbox({ code: FAST_DRIFT_CODE, document: doc, console: { warn() {}, log() {}, error() {} } });
+	h.factory(makeRequire(makeRuntime().RT)).apply(makeApplyContext(h));
+	await settleDrift(h.window);
+	const a = h.window.__DSH_DREAM_SKIN_STATUS__.anchors;
+	assert.deepEqual(a.notMounted, [composerGroup],
+		'the host still draws this class ⇒ the surface simply never mounted; ownership wins');
+	assert.ok(!a.channelAbsent.includes(composerGroup),
+		'a registered group must not be called channel-absent on a host that declares it');
+	assert.deepEqual(a.drifted, [], 'and it is not drift either — all three verdicts stay distinguishable');
+});
+
+test('drift probe (A1): with no host CSS to read, a registered group is still reported — never vanished, never re-labelled drift', async () => {
+	// The conservative path used to drop the pool on the floor: `hostSeen === false` returned
+	// `channelAbsent: []`, so a registered group disappeared from drifted AND from
+	// channelAbsent AND from notMounted. A missing observation is not the same as a
+	// retracted one — this is the "silently disappears instead of turning red" shape, caught
+	// while writing the gate rather than after shipping it.
+	const DIVERGENT = codeArrayConst('CHANNEL_DIVERGENT_PROBE_GROUPS');
+	const mounted = new Set([SIDEBAR_PROBE_SEL, 'div:has(> [data-shell-overlay])', '[class$="_fade"]']);
+	const doc = runPoolFixture({ hostCss: null, mounted });
+	const h = buildSandbox({ code: FAST_DRIFT_CODE, document: doc, console: { warn() {}, log() {}, error() {} } });
+	h.factory(makeRequire(makeRuntime().RT)).apply(makeApplyContext(h));
+	await settleDrift(h.window);
+	const a = h.window.__DSH_DREAM_SKIN_STATUS__.anchors;
+	assert.equal(a.pending, false, 'liveness came from the mounted groups, not from the unreadable CSS');
+	assert.deepEqual(a.channelAbsent.slice().sort(), DIVERGENT.slice().sort(),
+		'the registry does not depend on reading this page, so it still reports');
+	assert.deepEqual(a.notMounted, [], 'and it does NOT claim every host is healthy-unmounted');
+	const everyGroup = [...DIVERGENT, ...codeArrayConst('RETIRED_PROBE_GROUPS'), SIDEBAR_PROBE_SEL,
+		'div:has(> [data-shell-overlay])', '[class$="_fade"]'];
+	const accounted = [...a.drifted, ...a.notMounted, ...a.channelAbsent, ...a.retired];
+	// Only the MISSING groups owe an explanation — a mounted one belongs to no pool, and
+	// demanding otherwise would make this assertion fail for the wrong reason.
+	for (const sel of everyGroup.filter((g) => !mounted.has(g))) {
+		assert.ok(accounted.includes(sel), `${sel}: every probe group this page lacks must land in exactly one pool`);
+	}
+	assert.equal(accounted.length, everyGroup.filter((g) => !mounted.has(g)).length,
+		'and no group may be counted twice across pools');
 });

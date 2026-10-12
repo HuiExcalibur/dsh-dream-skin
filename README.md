@@ -307,12 +307,22 @@ dsh web   # 重启后恢复官方外观
 | DeepSeek Harness (`dsh`) | **同一构建兼容三代宿主**：`0.1.0-rc.6` ~ `0.1.x`（稳定版）与 `0.2.0-rc.1` / `0.2.x`（peer 已放宽为 `>=0.1.0-rc.6 <0.3.0-0`，宿主换代由运行时能力探测兜底）。**宿主升级后皮肤消失但插件显示已装？** 多半是 peer 窗口把整包跳过了——应急出路：`dsh plugin allow-version dsh-dream-skin@<版本> <宿主运行时版本>`（**用户自担风险的显式覆盖**，不是推荐做法），详见 [docs/desktop-support.md](./docs/desktop-support.md) |
 | Node.js | `>=18` |
 | 浏览器 | 现代 Chromium / WebKit（依赖原生 CSS 变量与 `matchMedia`） |
-| 桌面端 | **第三方 DSH Desktop 壳**：已适配并实机复核（issue #50/#51/#55）。**官方 DSH Desktop**：证据只支持"**预期可加载**"，不支持"已支持"——profile 目录与安装命令**本机从未验证**，故本文档**不给**可复制的桌面安装命令。<!-- desktop-claim: load-expected-unverified -->`--profile` 取值必须用宿主**自带**的模板名，照抄第三方文档会装进空壳 profile；判断依据见 **[docs/desktop-support.md](./docs/desktop-support.md)** |
+| 桌面端 | **第三方 DSH Desktop 壳**：已适配并实机复核（issue #50/#51/#55）。**官方 DSH Desktop**：证据只支持"**预期可加载**"，不支持"已支持"——profile 目录与"壳能加载本插件"这两件事本机已实测（装进 `~/.dsh/profiles/desktop`，用户重启壳后加载，活页读到过我方材质表；路径与读数见 `docs/publishing-to-npm.md` 8.4 与 `docs/desktop-support.md`），但**跨重启的设置持久化本机从未验证**，故本文档**不给**可复制的桌面安装命令。<!-- desktop-claim: load-expected-unverified -->`--profile` 取值必须用宿主**自带**的模板名，照抄第三方文档会装进空壳 profile；判断依据见 **[docs/desktop-support.md](./docs/desktop-support.md)** |
 
 > **兼容机制**：插件把全部平台 seed 放在受控 `try` 内按候选顺序探测，宿主全部换代时降级为哑模块并打 `console.warn`，不会拖垮 DSH Web（issue #43 已根治）。`0.2.0-rc.1` 起宿主按 peer 范围在 boot 阶段**整包跳过**不兼容插件，peer 窗口即本插件的对外兼容窗口，由回归门强制与 manifest 一致。**但宿主闸门只认 `@deepseek-ai/dsh` 前缀的 peer**：`@deepseek-ai/cordis` 与 `react` **不参与**宿主兼容判定（由包管理器的 semver 解析单独把关）。判定细节与两把尺的对照表见 `tests/package.host_compat.test.cjs` 与 [docs/desktop-support.md](./docs/desktop-support.md)。
 
 <details>
-<summary><b>📜 逐版本更新记录（10.12.0 → 9.9.0，点开查看）</b></summary>
+<summary><b>📜 逐版本更新记录（10.12.1 → 9.9.0，点开查看）</b></summary>
+
+**版本 10.12.1（2026-10-12）**：这一版**不改一个像素**，改的是探针的一句话。A1 的上半（10.12.0）把侧栏脚区从哈希里救出来之后，剩下的哈希锚点里有一族**根本不是漂移**：npm 渠道与官方桌面壳把同一张 `.module.css` **各自重掷了一次哈希**，基名必然不同。旧探针把这种已查明的分叉报进 `drifted`，结果是**官方壳上那盏灯永远红**——而一种永远不消的红色等于没有信息。机读契约加第四池 `anchors.channelAbsent`，登记表**每轮从壳的发货字节重推导**（对齐键是 CSS module 路径，不是基名）。回归门 **488/488**（10.12.0 为 480，本轮 **+8**：`client.smoke` 4 枚判决用例（壳形状页终局 `drifted: []` / 归属优先于登记表 / 宿主 CSS 读不到时已登记的组仍被点名 / **真告警 firing 时名单里不许夹带已解释的缺席**）+ `hashes` 3 枚（结构性一条 / 七腿变异一条 / 真语料重推导一条）+ `docs.numbers` 1 枚（那道门自己指向哪个版本块，过去是手抄的两枚版本字面量，现在从文档自己的标题形状推导，并配一条反向用例：删掉当前块标题必须点名红）；**新增与换形状分开记**）。质量审计 **229/229**（217 调色 + 12 工艺，两池改动不碰调色与工艺，门数不变）。
+
+**两台宿主各是什么（本轮现读，不是手抄）**：`.lXshSW_root, ._7yHdaG_panel` 在 npm `0.2.0-rc.1` 有 2 / 4 处命中，在官方壳的 121,348,951 字节 `app.asar` 里**各 0 处**——同两条 module（`skeleton/TodoPanel.module.css`、`queue/QueueDock.module.css`）在壳上画成 `aSus8q_*` / `v1kfCW_*`；`.uV2eYG_root` 同理，壳上是 `RlGAzG_*`。**后果不一样，分开写**：前者那条 `backdrop-filter` 磨砂在壳上**确实没生效**（宿自己仍画 `--dsw-specific-menu` 底色，是外观差不是坏面）；后者是 `background: transparent`，而现读壳的 `RlGAzG_root` 声明块里**根本没有 `background` 可撤**，所以无害——"无害"不是嘴上说的，`harmlessBecause` 把"该模块 `root` 的声明块不得出现 `background`"写成判据，壳里一出现就翻红。
+
+**为什么不并进 `retired`**：`retired` 的语义是"为我们**量不到**的旧宿主线保留的假设"，这两组是**两条当代渠道各量到了一次**；塞进去会让人以为那是尸体，而它其实有名字、有住址（module 路径）、查得到。**准入条件比现有那条 dead-hash 豁免更严**：npm 半的实测基名与命中数 + 壳里同模块的继任基名 + 失效面与后果，三样缺一即红；"npm 那半其实已经死了"（那是 `legacy-host-line`，不是通道分叉）、"登记了却从不进探针"、"bundle 与登记表不一致"、"继任基名被重掷"、"壳里重新画了这枚哈希"、"声称无害却拿不出证据"、"无害声明与 CSS 规则矛盾"——**七腿各自只在它该抓的那一腿翻红**，且七腿都跑在合成世界上：没有宿主、没有壳的机器照跑（登记表若是编出来的，不该靠某台机器才发现）。判决顺序是**归属 > 登记 > 漂移**（反过来的话登记表就成了能把任何缺席洗白的橡皮，有用例专钉）；保守出口按仓库纪律写成"报出来"而不是"消失"——宿主自有表读不到时，已登记的组仍点名在 `channelAbsent`，因为它的证据来自仓库之外。
+
+**一处对旧承诺的更正（显式标注，不悄悄改掉）**：`docs/desktop-support.md` 过去把 `drifted: [] && pending: false` 写成"**全部精修在本构建生效**"的正向信号——**这句在本版作废**，它被 `retired`（10.8.0）与 `channelAbsent`（本版）两次"把已解释的缺席移出告警"逐步掏空，留着就等于让绿灯说谎。现在分两层：`drifted: [] && pending: false` = **没有未解释的锚点换代**；"每条精修在这台机器上真的命中" = `drifted: [] && notMounted: [] && channelAbsent: [] && pending: false`；`retired` 不参与第二条（它在任何能量产的宿主上恒为非空，算进"全绿"就是再造一次那盏永远不会绿的灯）。
+
+**顺带撤回一条我自己开错的缺陷单**：本轮一度把"官方壳上 `isDesktopShell()` 返回 false"当成缺陷准备开工。先测之后撤回——三枚判定戳（`data-dsh-desktop-mode` / `__DSH_DESKTOP_FILE_PATH__` / URL 参数）在官方壳的 asar 里**各 0 命中**，而桌面专属那第 9 组探针的锚点 `.dshDesktopSidebarSurface` **也是 0 命中**：门一开，多出来的就是一盏**永远红灯**加两条永远画不到东西的规则，正是 J1 那轮写进文档的病灶反向复发。已在 `docs/desktop-support.md` 写明"不要改成 UA / Electron 嗅探"。官方壳上要紧的那些修正本来就不经过这道门。**Roadmap A1 仍不销账**：todo 面板与队列坞在壳上的磨砂还没修，且不能图省事用 `[class$="_dock"]`——现读壳上该后缀有 3 个基名，其中 `RlGAzG_dock` 就在 composer 那个模块里，而 `lib/client.js:2558-2564` 记着的回归成因正是"给 composer 一族加 `backdrop-filter`"。可用路径已量到：**用 module 内唯一后缀反推前缀**（现读到 `RlGAzG_cardWorkspaceTrigger` 这类只属单模块的类名）。**未验证**：这张表是**一台壳、一个时刻**的读数（`measuredAt: 2026-10-12`，壳内宿主字符串 `0.2.0-rc.2`）——壳升级后基名会再掷，那时门会红在"继任基名被重掷"这一腿，红得有名字，但"更新后这张表仍成立"这件事本身没被追过；`channelAbsent` 在壳上的观感 0 次目视（它不改任何声明，目视能证明的只有"页面没坏"）；分类器仍**绝不 fetch `<link>` 样式**（零网络不变式，边界一字未变）；宿主自有表只看**类名 token 是否出现**、不看它属于哪个模块——本机两台宿主今天没有跨模块同名复用（本轮逐模块列过），但这是**已知的宽松**不是验过的性质。更新：`dsh plugin --profile web add dsh-dream-skin@10.12.1`。
 
 **版本 10.12.0（2026-10-12）**：一条**用户看得见的缺陷**修好了——「左侧栏底部断裂」那条对齐规则一直写着 npm 宿主那一代的构建哈希类名，而官方桌面壳的同族基名**不是**它，所以这条修正在桌面壳上**从来没有生效过**。回归门 **480/480**（10.10.0 为 461，本轮 **+19**：`host.sidefoot` 9 枚现测锚点 + `craft` 变异 1 + `wash.cascade` 引擎用例 5（对齐族四条变异 + 层叠与关系式六条 + 提取账目 + 注入面拒绝 + 几何腿的前置条件）+ `client.storage` 的 D2 渲染门 1 + `host.gap` 的「空目录不是宿主」入口拒绝 1 + `docs.numbers` 的 CHANGELOG 块门与 scope 边界对照 2；**新增与换形状分开记**）。质量审计 **229/229**（217 调色 + 12 工艺）。
 
@@ -570,7 +580,7 @@ bundle（`@deepseek-ai/dsh-client-runtime/client`、…）。
 *动机：`0.2.0-rc.1` 实测 6 组宿主锚点漂 4 组——其中 3 组哈希确认换代（真漂移），1 组（含 `lXshSW_*`）宿主 CSS 仍在、只是面未挂载（10.5.0 起以 `notMounted` 与漂移分栏）；issue #62 用户侧表现为"皮肤一夜全消失"。*
 
 - [ ] **M** 剩余装饰规则去哈希类名依赖（侧栏 / 文件面板改用自有 `data-dsh-dream-skin-*` 标记；composer 与 nav-icon 已证明这条路走得通）
-      — 验收：漂移探针在 0.2.x 上给出 `drifted: [] && pending: false`
+      — 验收：漂移探针在 0.2.x 上给出 `drifted: [] && notMounted: [] && channelAbsent: [] && pending: false`（**只读 `drifted` 一空不算达标**：10.8.0 的 `retired` 与 10.12.1 的 `channelAbsent` 都会把"已解释的缺席"移出 `drifted`，一条能被"解释"满足的判据等于没有判据；判读口径见 `docs/desktop-support.md` 的「消费判读」）
 - [ ] **S** 把"宿主 rc 预检"固化成发布动作：新 rc 当天跑一次兼容判定表 + 一次真实 profile 载入
 - [ ] **M** peer 窗口滚动到 `0.3.x` —— **阻塞在上游，不在我方**：截至 2026-10-10，registry 上 `@deepseek-ai/dsh` 的 `latest` 是 `0.2.0-rc.2`、版本列表止于 `0.2.1-alpha.2`，`0.3.x` 从未发布过（`npm view @deepseek-ai/dsh versions --json`）。没有可对齐的目标版本，这条既无法开工也无法验证；上文兼容性表里那条现行 peer 窗口已覆盖宿主至今发布过的**每一个**版本。
       — 验收：宿主真的放出 0.3.x 之后，先跑兼容判定表 + 一次真实 profile 载入，通过才放宽；不放开就在文档写明"不支持"，绝不留静默跳过

@@ -164,9 +164,9 @@ function liveSuiteCount(files = null, dir = null) {
 const CLAIM_SITES = [
 	{ label: 'README.md 皮肤段', file: 'README.md', marker: '可测质量门', needs: ['total', 'palette', 'craft'] },
 	{
-		label: 'README.md 10.12.0 版本块',
+		label: 'README.md 当前版本块',
 		file: 'README.md',
-		scope: { from: '**版本 10.12.0', until: '**版本 10.10.0' },
+		scope: { blockStart: /^\*\*版本 \d/ },
 		marker: '回归门',
 		needs: ['suite']
 	},
@@ -178,7 +178,19 @@ const CLAIM_SITES = [
 	{ label: 'README.ja.md', file: 'docs/i18n/README.ja.md', marker: '配色', needs: ['total', 'palette', 'craft'] },
 	{ label: 'README.ko.md', file: 'docs/i18n/README.ko.md', marker: '팔레트', needs: ['total', 'palette', 'craft'] },
 	{ label: 'README.ru.md', file: 'docs/i18n/README.ru.md', marker: 'палитра', needs: ['total', 'palette', 'craft'] },
-	{ label: 'CHANGELOG.md', file: 'CHANGELOG.md', marker: '项质量门', needs: ['total', 'palette', 'craft'] },
+	{
+		label: 'CHANGELOG.md',
+		file: 'CHANGELOG.md',
+		// 10.12.1: this site used to be UNSCOPED, and the mutation below proved the
+		// weakness — the new release block pushed a second honest `229 项质量门` line into
+		// the file, `replace()` only edits the first, and the historical twin rescued the
+		// check. A "find the number anywhere in the file" gate is satisfied by any release
+		// note that happens to agree with today's measurement, which is not a claim about
+		// today. Same boundary the header comment already draws: the CURRENT block only.
+		scope: { blockStart: /^## \[\d/ },
+		marker: '项质量门',
+		needs: ['total', 'palette', 'craft']
+	},
 	{
 		// Issue #95-A: the CURRENT headline block restates the audit counts again
 		// (the "226/226 / 217 / 346" family), and mutating them stayed green because
@@ -186,7 +198,7 @@ const CLAIM_SITES = [
 		// of scope on purpose — same boundary the header comment draws.
 		label: 'CHANGELOG.md 头版块',
 		file: 'CHANGELOG.md',
-		scope: { from: '## [10.12.0]', until: '## [10.10.0]' },
+		scope: { blockStart: /^## \[\d/ },
 		marker: '质量审计',
 		needs: ['total', 'palette', 'craft']
 	},
@@ -234,14 +246,45 @@ function matchingLines(text, site) {
 		// a sentence about a heading that went missing), and an includes() boundary then closes
 		// the block at that sentence — every claim below it comes back as "the claim was
 		// deleted". That accident is in this round's CHANGELOG, so the boundary is anchored.
-		const from = lines.findIndex((l) => l.startsWith(site.scope.from));
-		if (from < 0) return null;
-		const until = site.scope.until
-			? lines.findIndex((l, i) => i > from && l.startsWith(site.scope.until))
-			: -1;
-		lines = lines.slice(from, until < 0 ? lines.length : until);
+		//
+		// 10.12.1: the boundary is DERIVED from the document instead of typed here. Two reasons,
+		// both of them this repository's own recorded failure shapes: (a) a hand-copied version
+		// literal is a second copy of the release number, and the docs' numbers are supposed to
+		// come from measurement, not prose; (b) when the pointer is copied forward by hand it
+		// silently points at the PREVIOUS block, which still carries that release's honest
+		// numbers — so the gate checks a historical statement and calls it the current one. The
+		// block-start pattern is structural (`**版本 <n>` / `## [<n>]`), so a new release moves
+		// the scope with no edit, and `currentBlockVersion()` below is what makes "the block I
+		// am checking is the version this tree ships" itself a checked fact.
+		const hits = [];
+		lines.forEach((line, i) => { if (site.scope.blockStart.test(line)) hits.push(i); });
+		if (hits.length === 0) return null;
+		lines = lines.slice(hits[0], hits.length > 1 ? hits[1] : lines.length);
 	}
 	return lines.filter((l) => l.includes(site.marker));
+}
+
+/** The version the scoped block claims to be, read off its own heading line. */
+function currentBlockVersion(text, site) {
+	const line = text.split('\n').find((l) => site.scope.blockStart.test(l));
+	if (!line) return null;
+	const m = line.match(/(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/);
+	return m ? m[1] : null;
+}
+
+/** Every scoped site must open on the version THIS tree ships. */
+function blockVersionProblems(read) {
+	const problems = [];
+	const pkgVersion = JSON.parse(read('package.json')).version;
+	for (const site of CLAIM_SITES.filter((s) => s.scope)) {
+		const named = currentBlockVersion(read(site.file), site);
+		if (!named) {
+			problems.push(`${site.label}: no version readable off the line that opens the block in ${site.file}`);
+		} else if (named !== pkgVersion) {
+			problems.push(`${site.label}: the block the gate reads opens with ${named}, but this tree ships ${pkgVersion}`);
+		}
+	}
+	return problems;
 }
 
 /** Empty means every site states the live numbers; otherwise one line each. */
@@ -251,7 +294,7 @@ function numberProblems(sites, readFile, numbers) {
 	for (const site of sites) {
 		const lines = matchingLines(readFile(site.file), site);
 		if (lines === null) {
-			problems.push(`${site.label}: the block starting "${site.scope.from}" is gone — the claim was deleted, not corrected`);
+			problems.push(`${site.label}: no line in ${site.file} opens a release block the way this site expects — the current release note was deleted, not corrected`);
 			continue;
 		}
 		const want = site.needs.map((k) => n[k]);
@@ -424,7 +467,7 @@ test('guard: a deleted claim site is a failure, not a pass', () => {
 	assert.ok(scoped, 'the claim-site table must still carry a scoped (current-release) site');
 	const problems = numberProblems([scoped], () => '# nothing here\n');
 	assert.equal(problems.length, 1, 'an absent scope must produce exactly one problem');
-	assert.ok(problems[0].includes(`the block starting "${scoped.scope.from}" is gone`), problems[0]);
+	assert.ok(problems[0].includes('opens a release block the way this site expects'), problems[0]);
 
 	const control = numberProblems([scoped], readReal);
 	assert.deepEqual(control, [], 'control: the real tree must still satisfy a single-site check');
@@ -527,15 +570,41 @@ test('a scope boundary is a line start, not a phrase quoted inside the block', (
 
 	for (const site of scoped) {
 		const lines = readReal(site.file).split('\n');
-		const from = lines.findIndex((l) => l.startsWith(site.scope.from));
-		assert.ok(from >= 0, `the opening marker "${site.scope.from}" is gone from ${site.file}`);
-		const injected = `本轮正文里引用了 ${site.scope.until} 这一行标题，它是被说起的出处，不是版本块的边界`;
+		const from = lines.findIndex((l) => site.scope.blockStart.test(l));
+		assert.ok(from >= 0, `no line in ${site.file} starts the way ${site.label} expects a release block to open`);
+		// A QUOTED copy of the next block's opener, sitting inside the current block. It must
+		// start with prose so only a line-anchored reader can tell it apart from a real heading.
+		const nextHeading = lines.slice(from + 1).find((l) => site.scope.blockStart.test(l));
+		assert.ok(nextHeading, `the ${site.label} block must be followed by a historical one to quote`);
+		const injected = `本轮正文里引用了 ${nextHeading} 这一行标题，它是被说起的出处，不是版本块的边界`;
 		const withQuote = [...lines.slice(0, from + 1), '', injected, ...lines.slice(from + 1)].join('\n');
 		// The leg is only meaningful if that line would have fooled an includes() matcher.
-		assert.ok(injected.includes(site.scope.until) && !injected.startsWith(site.scope.until),
-			'the injected line must contain the closing marker without starting with it, or this tests nothing');
+		assert.ok(withQuote.includes(nextHeading) && !injected.startsWith(nextHeading),
+			'the injected line must contain the closing heading without starting with it, or this tests nothing');
 		const problems = numberProblems([site], (rel) => (rel === site.file ? withQuote : readReal(rel)));
 		assert.deepEqual(problems, [],
-			`a quoted "${site.scope.until}" inside the ${site.label} block must not close the block: ${problems.join('; ')}`);
+			`a quoted "${nextHeading}" inside the ${site.label} block must not close the block: ${problems.join('; ')}`);
 	}
+});
+
+test('the scoped blocks are the CURRENT release — the pointer is derived, not copied', () => {
+	// Why this exists: the scope used to be two hand-typed version literals. A release that
+	// forgot to move them did not go red — it quietly kept checking LAST release's honest
+	// numbers, which is the "门自己的文案也会漂" shape this repository has been burned by
+	// before. Deriving the boundary from the document's own heading pattern removes the copy;
+	// this test is what proves the derived block is still the version this tree ships.
+	const problems = blockVersionProblems(readReal);
+	assert.deepEqual(problems, [], `a scoped release block is not the version this ships:\n  ${problems.join('\n  ')}`);
+
+	// Reverse case: a stale heading reddens it. Deleting the current block's heading makes the
+	// NEXT (historical) one the current block — the same accident the CHANGELOG structure gate
+	// catches from the other direction.
+	const site = CLAIM_SITES.find((s) => s.scope && s.file === 'CHANGELOG.md');
+	const real = readReal('CHANGELOG.md');
+	const heading = real.split('\n').find((l) => site.scope.blockStart.test(l));
+	const stale = real.replace(heading + '\n\n', '\n');
+	assert.notEqual(stale, real, `mutation: deleting ${heading} has to change the file`);
+	const after = blockVersionProblems((rel) => (rel === 'CHANGELOG.md' ? stale : readReal(rel)));
+	assert.ok(after.some((p) => p.startsWith(site.label) && p.includes('but this tree ships')),
+		`losing the current heading must be named by ${site.label}, got: ${JSON.stringify(after)}`);
 });
