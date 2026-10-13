@@ -340,9 +340,15 @@ test('stamp normalization is one table, asserted as a group', async (t) => {
  */
 function schemaDocProblems(text, key, version) {
 	const problems = [];
-	const line = text.split('\n').find((l) => l.includes(key));
+	// The claim site is a LIST ITEM, not "the first line that mentions the key".
+	// 10.14.1 learned this the hard way: adding a release-summary paragraph above
+	// the bullet — one that also names the key — silently moved this gate's
+	// `find()` onto a different line, so the gate went red while the documented
+	// fact had not changed at all. A gate whose subject is found by "first
+	// mention" is a gate that prose reordering can move.
+	const line = text.split('\n').find((l) => l.startsWith('- ') && l.includes(key));
 	if (line === undefined) {
-		problems.push(`docs/desktop-support.md never names the reserved key ${key}`);
+		problems.push(`docs/desktop-support.md never names the reserved key ${key} in a bullet (its claim site)`);
 		return problems;
 	}
 	if (!line.includes('schema 版本')) problems.push('the line naming the reserved key does not say it is the schema version');
@@ -382,6 +388,15 @@ test('the reserved key and its version are documented in a file that ships in th
 	assert.match(schemaDocProblems(unnamed, mod.STATE_SCHEMA_KEY, mod.STATE_SCHEMA_VERSION).join(' / '), /does not say it is the schema version/);
 	const noBoundary = mutateClaimLine(text, mod.STATE_SCHEMA_KEY, (l) => l.split('get').join('读取'));
 	assert.match(schemaDocProblems(noBoundary, mod.STATE_SCHEMA_KEY, mod.STATE_SCHEMA_VERSION).join(' / '), /outside the get answer is gone/);
+	// Deleting the claim bullet must stay red EVEN IF the key is still mentioned
+	// in prose above it — this is the exact shape that bit 10.14.1: a summary
+	// paragraph naming the key moved a first-match gate onto the wrong line.
+	const bulletDeleted = text
+		.split('\n')
+		.filter((l) => !(l.startsWith('- ') && l.includes(mod.STATE_SCHEMA_KEY)))
+		.join('\n');
+	assert.ok(bulletDeleted.includes(mod.STATE_SCHEMA_KEY), 'control: the prose mention must still be there for this leg to mean anything');
+	assert.match(schemaDocProblems(bulletDeleted, mod.STATE_SCHEMA_KEY, mod.STATE_SCHEMA_VERSION).join(' / '), /never names/);
 	// ... and the line-scoped mutation must NOT be a whole-file accident: the
 	// unmutated document still passes the same checker.
 	assert.deepEqual(schemaDocProblems(mutateClaimLine(text, mod.STATE_SCHEMA_KEY, (l) => l), mod.STATE_SCHEMA_KEY, mod.STATE_SCHEMA_VERSION), []);

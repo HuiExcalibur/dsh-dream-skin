@@ -411,7 +411,6 @@ entidades de la tabla de módulos: seeds de plataforma (`react`, `react/jsx-runt
 
 *Motivo: tras el lanzamiento del Desktop oficial apareció un tipo de usuario nuevo — una persona que atiende una tanda de máquinas. El contacto real con ese perfil aún es escaso, así que primero lo barato y no allanar todo de una vez.*
 
-- [ ] **M** Una salida legible por máquina para «¿surtió efecto la piel?»: guía de lectura campo por campo de `$DSH_HOME/dream-skin.json` y `__DSH_DREAM_SKIN_STATUS__`, para que un script decida en lugar de una persona abriendo la consola
 - [ ] **M** Guía de despliegue por lotes (estructura de directorios de profile, diferencia entre instalación `link:` y registry, semántica de las claves de exención de `compatibility.json`, puertos dinámicos)
 
 ### D. Experiencia de producto

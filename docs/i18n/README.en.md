@@ -401,7 +401,6 @@ seeds (`react`, `react/jsx-runtime`, …) and registered client bundles (`@deeps
 
 *Why: after the official Desktop release a new kind of user showed up — one person looking after a batch of machines. Real contact with that profile is still thin, so take the two cheap items first instead of paving the whole road at once.*
 
-- [ ] **M** A machine-readable answer to "did the skin actually take effect": a field-by-field reading guide for `$DSH_HOME/dream-skin.json` and `__DSH_DREAM_SKIN_STATUS__`, so a script can decide instead of a person opening the console
 - [ ] **M** A batch deployment guide (profile directory layout, `link:` vs registry installs, the semantics of `compatibility.json` exemption keys, dynamic ports)
 
 ### D. Product experience

@@ -397,7 +397,6 @@ Das Client-Bundle ist direkt im `__ModuleLoader__`-Format geschrieben (derselben
 
 *Motiv: nach dem offiziellen Desktop-Release taucht ein neuer Nutzertyp auf — eine Person betreut mehrere Maschinen. Der echte Kontakt zu diesem Bild ist noch dünn, also erst die zwei billigen Punkte statt gleich die ganze Straße zu pflastern.*
 
-- [ ] **M** Ein maschinenlesbarer Ausgang für „ist der Skin wirklich wirksam": Feld-für-Feld-Leseanleitung für `$DSH_HOME/dream-skin.json` und `__DSH_DREAM_SKIN_STATUS__`, damit ein Skript entscheidet und nicht ein Mensch in der Konsole
 - [ ] **M** Leitfaden für Rollen in Serie (Profil-Verzeichnisstruktur, Unterschied `link:` vs. Registry-Installation, Bedeutung der Ausnahmeschlüssel in `compatibility.json`, dynamische Ports)
 
 ### D. Produkt-Erlebnis
