@@ -145,6 +145,14 @@ function carriedByProblems(cssById, registry = CHANNEL_DIVERGENT_GROUPS) {
 	return problems;
 }
 
+/** Which injected stylesheets does craft-audit NOT know by name?
+ *  Pairing itself would still grade an unnamed sheet (it iterates every sheet it is handed),
+ *  but every OTHER craft gate keys off the registered tables — so an unnamed sheet is graded by
+ *  half the gates and ignored by the rest. That split is worth a red line, not a comment. */
+function unregisteredSheetIds(sheetList) {
+	return sheetList.filter((s) => s.registered === false).map((s) => s.id);
+}
+
 /** Every channel-divergent excuse has to say what carries the rule now. This is a claim about
  *  the REGISTRY, not about the CSS: a rule can keep its anchor while the excuse behind the
  *  absent hash went mute, and then `anchors.channelAbsent` would be read by a consumer with no
@@ -262,6 +270,9 @@ for (const s of extractSheets(read("lib/client.js"))) sheets[s.id] = s.css;
 
 test("A1 pairing: no rule in a registered sheet may bet on a host hash without a hash-free anchor", () => {
 	assert.ok(Object.keys(sheets).length >= 2, `this gate must see both registered sheets, saw [${Object.keys(sheets)}]`);
+	const unnamed = unregisteredSheetIds(extractSheets(read("lib/client.js")));
+	assert.deepEqual(unnamed, [], `the bundle injects stylesheet(s) [${unnamed.join(", ")}] that craft-audit does not name — `
+		+ "pairing would grade them, but every other craft gate keys off the REGISTERED tables, so this release would be `clean` on a sheet only half the gates can see. Name it in craft-audit first.");
 	const problems = pairingProblems(sheets).concat(carriedByProblems(sheets));
 	assert.deepEqual(problems, [], `Roadmap A1 regressions:\n${problems.join("\n")}`);
 });
@@ -295,7 +306,22 @@ const shellFake = () => hostFake("todo-panel") + "\n.aSus8q_root{}.v1kfCW_panel{
 
 test("A1 pairing mutations: each way the promise can rot reddens its own leg", () => {
 	const legs = [];
+	const bundleText = read("lib/client.js");
 	const baseCss = sheets.material;
+
+	// A stylesheet craft-audit cannot name is graded HERE but by no other craft gate, so the
+	// release could read "clean" on a sheet only half the gates can see. The leg plants a real
+	// `.textContent =` assignment into a string copy of the bundle and lets the EXTRACTOR answer —
+	// this file is not asserting a shape it invented.
+	legs.push(["the bundle injects a sheet craft-audit does not name", () => {
+		const planted = bundleText + "\n;var probe=document.createElement('style');probe.textContent='.zzZz99_card{color:red}';\n";
+		assert.ok(unregisteredSheetIds(extractSheets(planted)).length > 0,
+			"the planted sheet was not picked up as unnamed — this leg would be grading nothing");
+		// The control half: the real bundle must have no unnamed sheet, or the check is a tautology.
+		assert.deepEqual(unregisteredSheetIds(extractSheets(bundleText)), [],
+			"the shipped bundle itself carries an unnamed stylesheet — fix that before this leg means anything");
+		return unregisteredSheetIds(extractSheets(planted)).map((id) => `sheet ${id} is not registered in craft-audit — half the gates would ignore it`);
+	}, /not registered in craft-audit/]);
 
 	legs.push(["a hash-only rule with no anchor", () => {
 		const copy = Object.assign({}, sheets, { material: baseCss + "\n.q7Zz0a_card{background:red}" });
