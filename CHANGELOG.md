@@ -47,6 +47,16 @@ preflight OK — the newest published @deepseek-ai/dsh is inside our window (eva
 - **没测过的还有**：npm registry 不可达但网络"半通"（超时而非 ECONNRESET）时 `readPackument` 走的是同一条 environment 出口，但那条超时路径本机只以 `ECONNREFUSED` / `ECONNRESET` 两种注入验过。
 
 
+### 发布读数（2026-10-13，发版之后补记）
+
+- **GitHub**：main `fd61780 → ed456a9`（一笔：预检脚本 + 共享尺子抽出 + 夹具 + 门 + 8 份 Roadmap 销账 + 清单 §十），tag **`v10.13.1`** 单 refspec 推送（`refs/tags/v10.13.1 = ab540ed7f8865a6b8a1e8e3c45cba16d80c39c0c`）；第一次推 tag 时代理连接被重置，看清是"远端未收到"后原样重推一次即成（没有 `--force`、没有动别的 tag）。
+- **CI**：run **38424583854** 六作业全绿（`test` × Node 18/20/22/24 + `typecheck` + `Computed-style gate`）。`test (20)` 日志：`# tests 509 / # skipped 31`——那 31 条是**具名跳过**（本机没宿主也没浏览器的 CI 作业上，需要宿主 / 壳 / Chrome 的腿全部自己报名字），不是失败也不是通过；`--profile-load` 那两条正是这一类。计算样式作业照旧打印 `graded host[corner/fade/side/frost]`。
+- **npm**：`dsh-dream-skin@10.13.1`，packument `time` 戳 `2026-10-13T15:49:51.966Z`；`dist.shasum 0fe4612f77e3f6df5e4a49c067ae1452f69954c7` 与本地 `npm pack --dry-run` **逐位相同**，`dist.fileCount 24`、包体 411.7 kB（排除表一字未动）。**读侧延迟第五次实遇**：`time` 与 `dist-tags.latest` 已翻到 `10.13.1` 的**同一次读取**里 `versions['10.13.1']` 仍缺，约三分钟后单版本 endpoint 才读得到——再次确认"发出去了没有"只看 `time`，且 packument 内部会自相矛盾。
+- **从 registry 真装一次**：一次性目录 `npm install dsh-dream-skin@10.13.1`（3 分钟，含一次代理慢通道）⇒ `package.json 10.13.1`、`PLUGIN_BUILD = "10.13.1"`、`lib/client.js` 429,910 字节且与工作树那份**逐字节相同**；包内目录仍是那 8 项（`scripts/` `tests/` `CHANGELOG.md` 一个都不在）。
+- **GitHub Release**：<https://github.com/RevolutionLA/dsh-dream-skin/releases/tag/v10.13.1>。发布时现查：开放 issue `0`、开放 PR `0`。
+- **本机两个 profile 都没动**：桌面 profile 仍 `^10.12.1`（实装 `10.12.1`），web profile 仍是 `link:` 工作树——本版不改任何像素，但"要不要把新版装进你正在用的界面"仍然是用户自己的决定（预检的 `--profile-load` 读的正是这个 link 工作树，所以它报的是我方工作树会被挂载，不是任何用户机器）。
+
+
 ## [10.13.0] - 2026-10-13
 
 > **A1 的下半：两处磨砂不再赌哈希，而 A1 的"及格线"从运行时搬进了一道静态门。** 上一版把"这条哈希在官方壳上不存在"登记成了 `channelAbsent`；这一版让那条规则**不再需要那枚哈希**——宿主自己在两条渠道上都给这两处表面公布了稳定属性。同时把验收口径改了一次（**显式作废 10.12.1 写下的那半句**，理由写在第三节，不悄悄换）。合计 **229 项质量门全过**（217 调色 + 12 工艺，本轮不碰调色与工艺，门数不变），全套 `npm test` 488→**496 全绿**。
