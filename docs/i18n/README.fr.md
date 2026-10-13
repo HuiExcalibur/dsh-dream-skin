@@ -400,7 +400,6 @@ seeds de plateforme (`react`, `react/jsx-runtime`, …) et des bundles client en
 
 *Motivation : depuis la sortie du Desktop officiel, un nouveau profil d'utilisateur apparaît — une personne qui gère une flotte de machines. Les contacts réels avec ce profil sont encore rares, donc on commence par les deux points les moins chers, sans tout couvrir d'un coup.*
 
-- [ ] **S** Ajouter un champ de version de schéma au fichier d'état (les montées de version reposent aujourd'hui sur une lecture tolérante ; aucun exercice de compatibilité ascendante n'a été fait)
 - [ ] **M** Une sortie lisible par machine pour « le skin est-il réellement appliqué » : guide de lecture champ par champ de `$DSH_HOME/dream-skin.json` et de `__DSH_DREAM_SKIN_STATUS__`, pour qu'un script tranche au lieu d'un humain ouvrant la console
 - [ ] **M** Guide de déploiement en série (arborescence des profils, différence entre installation `link:` et registry, sémantique des clés d'exemption de `compatibility.json`, ports dynamiques)
 
