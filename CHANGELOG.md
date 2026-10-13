@@ -62,6 +62,21 @@ D 组挂着「外链壁纸空值态提示（S）」，但那条**已随 10.12.0 
 - todo 面板 / 队列坞**不进探针池**：与提问卡、授权卡同一类按需挂载面，启动期采样必然恒报缺席（Roadmap A 组最后一条 S 就是这个缺口）。
 - 桌面端跨重启 `localStorage` 持久性**仍未测**（要用户本人重启两次）；`isDesktopShell()` 在官方壳上仍返回 false（契约语义，见 10.12.1 §六）。
 
+### 六、发布读数与本轮评审口径（2026-10-13，发版之后补记）
+
+**发布读数（全部现查，不是照抄上一版的姿势）**：
+
+- **GitHub**：main `3ec953d → f2f827b`（本轮三笔：并集锚点与静态配对门 / frost 组与属性独占性 / 自查后的归因改正），tag `v10.13.0` 按**单 refspec** 推送（`refs/tags/v10.13.0 = cd6b5bf5f6b65a21d473e10105f7d46bc52a07a6`），没有碰任何其他 tag，没有 `--force`。
+- **CI**：run `38412392008` 六作业全绿（`test` × Node 18/20/22/24 + `typecheck` + `Computed-style gate`）。计算样式作业在 runner 上真跑了引擎：日志 **13 行读数、零 skip 行**，OK 那句自报 `graded host[corner/fade/side/frost] desktop[desktop] coexist[coexist]`；`frostRef` / `frostTodoPanel` / `frostDockPanel` 在 CI 的 Chrome 里同为 `blur(20px) saturate(1.4)`、`frostPanelDecoy` 为 `none`。也就是说 `side` 那组判据**第一次在 CI 这条通道上被评分**（10.12.0 起一直被采样、一直没被评分），而本版新增的 `frost` 组从第一天起就在 CI 上有读数。
+- **npm**：`dsh-dream-skin@10.13.0` 的 packument `time` 戳 `2026-10-13T14:24:08.001Z`；`dist.shasum 6d0c5f7825fec6b349ac7c7a3ffde08ba5520436` 与本地 `npm pack` 那份**逐位相同**，`dist.fileCount 24`（排除表一字未动）。判"发出去了没有"仍然只看 `time`——发布后头几分钟单版本 endpoint 会 404、`versions` 里也还没有，这不是没发出去。
+- **从 registry 真装一次**：一次性目录里 `npm install dsh-dream-skin@10.13.0` → 装到 `10.13.0`、bundle 内 `PLUGIN_BUILD = "10.13.0"`、`lib/client.js` 429,910 字节且与工作树那份**逐字节相同**，两枚新常量（`TODO_PANEL_SELECTOR` / `QUEUE_DOCK_PANEL_SELECTOR`）都在场。
+- **GitHub Release**：<https://github.com/RevolutionLA/dsh-dream-skin/releases/tag/v10.13.0>（`isDraft: false`）。
+- **本机桌面 profile 仍停在 `10.12.1`，本轮没有动它**：这一版会改壳上那两处的像素，而我方只有夹具读数、没有活页读数，所以不擅自把新版本装进用户正在用的 profile；要装请说一声，路径与回滚备份照 `docs/publishing-to-npm.md` §8.4。
+
+**本轮评审口径**：按既有指示**不派生子代理**，蓝军 / 第三方 / 裁定三角色由**同一个 agent 串行扮演**——这是**降级模式**，独立性已被削弱，不称"独立复核"。实际抓到并改掉的三条（都在 `49c6730`）：① **归因写错了**——本文第一版把"side 组被采样却没被评分"的起点写成 10.10.0，`git show v10.10.0:scripts/wash-cascade.cjs` 现场读到那一版 `WASH_GROUPS` 只有 `corner/fade/desktop`，`git log -S` 也指向 10.12.0；"引用自己账本里的句子也要按 tag 复核"这条纪律本轮又慢了一步。② **配对门的可见边界**补了一条腿（未登记的样式表 = 0，并由真抽取器演"种一张进去"那一侧）。③ 变异腿计数按现数 13 → 14 同步到三份文档。
+
+**同一处要作废一句**：`49c6730` 的提交信息里第 ② 条写的是"frost 组原本没拿到从发货 CSS 现读期望值这一半，现在真的被 buildFixture 调用"——**这句不实**。`frostExpectation()` 自 `25cfff4` 起就已在 `buildFixture()` 里被调用，`49c6730` 的 diff 只动了文档与 `tests/host.frosthooks.test.cjs`（`git show --stat` 为证）。提交信息已经进了历史、不改写，这里按仓库纪律显式标注作废：**那一条不属于 49c6730 的改动，是 25cfff4 已经完成的工作**。
+
 
 ## [10.12.1] - 2026-10-12
 
