@@ -312,7 +312,7 @@ test("mutation #94: dropping packages from the corpus reddens the shortfall chec
 const { CHANNEL_DIVERGENT_GROUPS } = require("../scripts/data/dead-hashes.cjs");
 const { findShellAsar, readShellAsar, moduleClassesInShell, classRuleInShell } = require("../scripts/lib/desktop-shell.cjs");
 
-function channelDivergentProblems({ registry, runtimeGroups, probesBlock, npmTextByPackage, shellText }) {
+function channelDivergentProblems({ registry, runtimeGroups, probesBlock, npmTextByPackage, shellText, bundleText }) {
 	const problems = [];
 	const regKeys = Object.keys(registry).sort();
 	const runKeys = runtimeGroups.slice().sort();
@@ -325,6 +325,24 @@ function channelDivergentProblems({ registry, runtimeGroups, probesBlock, npmTex
 			problems.push(`"${group.slice(0, 46)}" is registered but never sampled — the pool would filter a group that cannot go missing`);
 		}
 		if (entry.kind !== "channel-divergent") problems.push(`${group.slice(0, 30)}: unknown kind "${entry.kind}"`);
+		// 10.13.0: `carriedBy` is REQUIRED. The pool above still reports the hash as absent on
+		// one channel — that is a fact worth reading — but A1's pass/fail string stopped
+		// trusting it, because a judge every entry can talk its way out of is a permission.
+		// What carries the rule instead has to be named, shipped, and measured on both
+		// channels (`tests/host.frosthooks.test.cjs` does the measuring; the legs below check
+		// the naming and that the anchor is actually in the bundle).
+		const cb = entry.carriedBy;
+		if (!cb || !Array.isArray(cb.anchors) || cb.anchors.length === 0) {
+			problems.push(`${group.slice(0, 30)}: channel-divergent with no carriedBy anchor — the excuse says the hash is`
+				+ " missing here and nothing says what paints the rule instead");
+		} else if (bundleText !== undefined) {
+			for (const a of cb.anchors) {
+				if (!bundleText.includes(a)) {
+					problems.push(`${group.slice(0, 30)}: carriedBy names "${a}" but no shipped rule contains it — `
+						+ "the hash-free branch this excuse rests on is not in the bundle");
+				}
+			}
+		}
 		if (!entry.why || entry.why.length < 40) problems.push(`${group.slice(0, 30)}: the claim needs a checkable \`why\``);
 		if (!Array.isArray(entry.surfaces) || entry.surfaces.length === 0) {
 			problems.push(`${group.slice(0, 30)}: no surfaces named — a divergence with no successor is just a dead hash`);
@@ -374,6 +392,8 @@ function syntheticWorld(overrides = {}) {
 	const npmTextByPackage = overrides.npmTextByPackage || {
 		// Every npm base the shipped registry names, drawn by the package it claims.
 		"dsh-client-ui-conversation": ".lXshSW_root{}._7yHdaG_panel{}.uV2eYG_root{}.uV2eYG_card{}"
+			+ "\n\"data-testid\": \"todo-panel\", \"data-queue-dock\": \"\", children: (0, react_jsx_runtime.jsxs)(\"div\", {"
+			+ "\n    className: QueueDock_module_css_default.panel });"
 	};
 	const shellText = overrides.shellText || [
 		"//#region \\0dsh-css:D:\\x\\packages\\client\\ui-conversation\\src\\client\\skeleton\\TodoPanel.module.css.mjs",
@@ -382,10 +402,21 @@ function syntheticWorld(overrides = {}) {
 		"const css$6 = \".v1kfCW_dock{box-sizing:border-box}.v1kfCW_panel{}\";",
 		"//#region \\0dsh-css:D:\\x\\packages\\client\\ui-conversation\\src\\client\\skeleton\\InputBar.module.css.mjs",
 		"const css$1 = \".RlGAzG_root{padding:0 8px 4px;display:flex}.RlGAzG_dock{}\";",
+		"\"data-testid\": \"todo-panel\", \"data-queue-dock\": \"\", children: (0, r.jsxs)(\"div\", {",
+		"  className: QueueDock_module_css_default.panel });",
 		""
 	].join("\n");
-	const probesBlock = overrides.probesBlock || Object.keys(registry).join(", ");
-	return { registry, runtimeGroups: overrides.runtimeGroups || Object.keys(registry), probesBlock, npmTextByPackage, shellText };
+	// Both entries stay SAMPLED (the absence is still a fact worth reading) — 10.13.0 changed
+	// what the absence proves, not whether it is reported. See CHANNEL_DIVERGENT_PROBE_GROUPS.
+	const sampled = Object.keys(registry);
+	const probesBlock = overrides.probesBlock || sampled.join(", ");
+	return {
+		registry, runtimeGroups: overrides.runtimeGroups || sampled, probesBlock, npmTextByPackage, shellText,
+		bundleText: overrides.bundleText || [
+			"[data-testid=\"todo-panel\"]", "[data-queue-dock] > [class$=\"_panel\"]", ".lXshSW_root, ._7yHdaG_panel",
+			"[data-dsh-dream-skin-composer]", ".uV2eYG_root"
+		].join(", ")
+	};
 }
 
 test("A1: the channel-divergent registry is structurally sound on every machine (no corpus needed)", () => {
@@ -397,10 +428,11 @@ test("A1: the channel-divergent registry is structurally sound on every machine 
 test("A1: every way the divergence claim can rot reddens the gate, and each one names itself", () => {
 	const legs = [];
 
-	// ① the bundle excuses a group the registry never reasoned about.
+	// ① the bundle samples a hash the registry no longer lists (and does not excuse).
 	legs.push(["bundle and registry disagree", () => {
 		const w = syntheticWorld();
-		w.runtimeGroups = w.runtimeGroups.concat([".zz9Qq_root"]);
+		w.runtimeGroups = [".zz9Qq_root"];
+		w.probesBlock = ".zz9Qq_root";
 		return channelDivergentProblems(w);
 	}, /!= registry/]);
 
@@ -411,6 +443,21 @@ test("A1: every way the divergence claim can rot reddens the gate, and each one 
 		w.probesBlock = ".bqrRRG_card";
 		return channelDivergentProblems(w);
 	}, /never sampled/]);
+
+	// ②b an excuse that no longer says what paints the rule (carriedBy deleted).
+	legs.push(["channel-divergent with no carriedBy", () => {
+		const w = syntheticWorld();
+		const clone = JSON.parse(JSON.stringify(w.registry));
+		delete clone[".uV2eYG_root"].carriedBy;
+		w.registry = clone;
+		return channelDivergentProblems(w);
+	}, /no carriedBy anchor/]);
+
+	legs.push(["carried anchor that the bundle does not ship", () => {
+		const w = syntheticWorld();
+		w.bundleText = w.bundleText.replace(/\[data-queue-dock\] > \[class\$="_panel"\]/g, "");
+		return channelDivergentProblems(w);
+	}, /not in the bundle/]);
 
 	// ③ the npm half dies: a hash absent from BOTH channels is a dead hash, and dead hashes
 	//    owe their excuse to DEAD_HASHES with a different admission test.
