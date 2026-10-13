@@ -2,6 +2,51 @@
 
 记录 `dsh-dream-skin` 的可观变更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。从 `8.28.0` 起，版本号启用**日期式规则**：`M.D.X`（月.日.当日第几个版本），例如 8 月 28 日首个版本 `8.28.0`，当日再发 `8.28.1`，次日则为 `8.29.0`，以取代旧的 `0.4.x` 语义化版本（日期按维护者本地时区 UTC+8 计）。
 
+## [10.13.1] - 2026-10-13
+
+> **Roadmap A 组那条 S：宿主 rc 预检从"我记得做"变成"一条命令 + 一条能红的门"。** issue #62 的根因不是缺工具，是**缺重复**——`0.2.0-rc.1` 起宿主在 boot 阶段读我方 `@deepseek-ai/dsh*` peer 范围，不满足就整包跳过（用户侧表现为"皮肤一夜全消失"），而宿主持续发 rc / alpha，于是"今天最新的宿主在不在窗内"这句话会自己过期。本版把它做成 `npm run host:preflight`。合计 **229 项质量门全过**（217 调色 + 12 工艺，两池都不碰），全套 `npm test` 496→**509 全绿**。
+
+### 一、先测：今天真实跑出来的读数
+
+```
+preflight input: registry | evaluator: the host's own evaluatePluginCompatibility()
+  (…/npm/node_modules/@deepseek-ai/dsh @ 0.2.0-rc.1) | our window: >=0.1.0-rc.6 <0.3.0-0
+candidates 31 (publish stamps on 31) | in window 26 | dist-tags 0.2.0-rc.2 (3 tags)
+  | newest by stamp: 0.2.1-alpha.2 @ 2026-10-09T08:18:00.501Z — INSIDE the window
+…
+preflight OK — the newest published @deepseek-ai/dsh is inside our window (evaluator: host).
+```
+
+`--profile-load` 那半同一次跑出：真实 web profile 载入 **19 层 bundle、0 个被跳过**，我方那份挂在里面。
+两个顺手量到的事实：**窗外的 5 个版本全是历史**（`0.0.1-rc.*` 与 `0.1.0-rc.2/3`），本版**刻意不让它们判红**——
+只有"按发布时间最新的那一个"能红，否则这条门从第一天起就是红的、并很快被人关掉；
+`dist-tags.latest`（`0.2.0-rc.2`）与"最新发布的版本"（`0.2.1-alpha.2`）**是两个不同的问题**，各占一条判据。
+
+### 二、改了什么
+
+- **`scripts/host-preflight.cjs`（新）**：一条命令两条腿——① 判定表，② `--profile-load` 驱动宿主自己的 `loadProfileDirectory()` 读 `skippedBundles`。判定值**优先来自宿主自己那份 `evaluatePluginCompatibility()`**（从被检宿主包自己的 `node_modules` 里解析 `@deepseek-ai/dsh-app-boot`，不让机器上另一份副本替它回答）；本机没装宿主时退回零依赖镜像实现，**并在第一行把"这次是谁算的"印出来**。两份都在时逐版本要求一致，不一致 ⇒ 红在"去重生成 `tests/fixtures/host_compat_verdicts.json`"那句上。`--profile-load` 走的是**只读**那半：宿主文档写明 `loadProfileDirectory()` 跳过不兼容包时**不改 manifest**，而 `loadProfile()` 会写——所以本文件永不叫后者。
+- **`scripts/lib/peer-window.cjs`（新）**：那把零依赖的尺从 `tests/package.host_compat.test.cjs` 里**搬出来**共用，而不是在脚本里再抄一份。原文件 8 条用例全绿照跑（它仍是那两份从宿主真实 checker / 宿主自带 node-semver 抓下来的判定表的对照场）。
+- **判定表的两份夹具**：`tests/fixtures/host_packument_sample.json` 是**现场抓的** registry 回答（31 个版本 + 发布时间 + dist-tags，只留这三样，provenance 写清楚）；`host_packument_future.json` 在它之上**只加一行** `0.3.0-rc.1`、发布时间写成 2099——"按戳最新"这条尺子必须挑它，而 dist-tags 保持原样，这样两份夹具之间只差"最新那一行"这一件事。
+- **四个出口**（与 `wash:check` 同一套纪律，issue #102）：`0` 跑了且同意 · `1` 跑了但窗外（或两把尺子打架）· `3` 环境不给跑**并点名哪一样**（`registry` / `host install` / `profile`），**不算通过** · `4` 要了严格模式（`DSH_PREFLIGHT_STRICT=1` 或 `--strict`）却没跑成。
+- **发布清单落进 `docs/publishing-to-npm.md` 第十节**：命令、四个出口各是什么意思、红了只有两条诚实出口（① 对着那个版本跑表 + 真实载入，通过才抬窗，并**同轮**重生成那份从宿主 checker 抓下来的判定表；② 不抬，就在 8 份 README 的兼容表里写明"不支持"）。**第三条不存在**：把表原样留着、只在群里说一句"新版可能不兼容"，就是 #62 当时的形状。
+- **Roadmap 销账**：A 组那条 S 从 **8 份 README** 一起删除（按既定纪律删条目而不是打勾，开放项 10→9）；同时把**被上游阻塞**那条 `0.3.x` 的验收句里"先跑兼容判定表 + 一次真实 profile 载入"换成点名这条命令——那条 item 依旧阻塞（registry 上至今没有 `0.3.x`，实测），但它的验收从此是**可执行**的，不再是一句将来再说的动作。反向证据：8 份里只要少删一份，`roadmap(...)` 的镜像门当场点名翻红。
+
+### 三、这条门自己栽过的第一版（照实记）
+
+`npm view <pkg> --json` 把 `versions` 投影成**数组**，而 registry 自己给的 packument 是**以版本为键的对象**。第一版脚本按对象写（`Object.keys(packument.versions)`），在真机上跑出的是**31 行下标 `0..30` 的"版本"**——它照样打印、照样算"几个在窗内"、照样 `exit 0`。这是本仓库反复记的那一族的又一个实例：**门读错了主语时不会喊，它会安静地给出一个形状正确的答案**。修法是在 `buildTable()` 里同时接两种形状，并加一条腿把两种形状喂进同一份判定、要求逐行一致，另加一条"没有哪一行的版本号是个裸下标"（`/^\d+$/`）的断言——**这条腿是先看到 bug 才写的，但它现在守的是将来那次重写**。
+
+### 门与账本
+
+回归门 **509/509**（10.13.0 为 496）。**+13 全在新文件 `tests/host.preflight.test.cjs`**：判定表逻辑 6 条（最新尺子 / 窗外判红并给出两条出口 / `dist-tags.latest` 自成一条 / 缺时间戳与空版本表都是"报出来"而不是"平滑掉" / 镜像与宿主必须一致 / 两种 packument 形状同判）、夹具事实 1 条（今天真抓的那份必须仍是绿的，且那份 2099 的必须红）、CLI 出口 4 条（registry 拒答 = exit 3、严格 = exit 4、没宿主 = 退回镜像并**自报**、坏路径与坏参数 = 用法错但窗外夹具 = exit 1）、清单门 1 条（`package.json` 有 script、文档点到命令与 `--profile-load`、并写明 exit 3 **不算通过** / exit 1 是窗外）、`--profile-load` 真载入 1 条 + 它的降级 1 条。**具名跳过 0 条**：真机两条都跑（本机有宿主），CI 上后两条走具名跳过。质量审计 **229/229**（217 调色 + 12 工艺）；`repo:eol` **120** 个文本文件全 LF（+5：两份脚本、一份测试、两份夹具）；`host:census:check` 与 `craft:audit` 照旧绿；Roadmap 镜像门 **22/22**。
+
+### 未验证 / 边界
+
+- **这条门没有每日排程**：它和 `wash-gate` 一样只在有人跑时跑。宿主今天发了 rc 而没人跑预检，窗内窗外都不会自己说话——本版消除的是"忘了怎么查"，不是"忘了查"。把预检挂到 cron / 定时 workflow 上是下一步（Roadmap A 组已无相关条目，这条欠账记在这里而不是记成已完成）。
+- **判定表的"窗外 5 个版本"是本版现抓的**：夹具是快照，registry 会变。快照烂掉时红的是"这份夹具至少要有 30 个版本""五个月外版本"这两条断言，而不是静默失配；重抓一次命令写在 `tests/fixtures/host_packument_sample.json` 的 `_provenance.command` 里。
+- **`--profile-load` 读的是本机 profile 现状**（web profile 是 `link:` 工作树），它证明的是"今天这台机器的这个 profile 会把我们挂上"，**不是**任何用户机器上的装载；官方桌面壳那条通道依旧要用户本人重启（见 10.13.0 §六 与任务清单里那条活页欠账）。
+- **没测过的还有**：npm registry 不可达但网络"半通"（超时而非 ECONNRESET）时 `readPackument` 走的是同一条 environment 出口，但那条超时路径本机只以 `ECONNREFUSED` / `ECONNRESET` 两种注入验过。
+
+
 ## [10.13.0] - 2026-10-13
 
 > **A1 的下半：两处磨砂不再赌哈希，而 A1 的"及格线"从运行时搬进了一道静态门。** 上一版把"这条哈希在官方壳上不存在"登记成了 `channelAbsent`；这一版让那条规则**不再需要那枚哈希**——宿主自己在两条渠道上都给这两处表面公布了稳定属性。同时把验收口径改了一次（**显式作废 10.12.1 写下的那半句**，理由写在第三节，不悄悄换）。合计 **229 项质量门全过**（217 调色 + 12 工艺，本轮不碰调色与工艺，门数不变），全套 `npm test` 488→**496 全绿**。
@@ -75,7 +120,7 @@ D 组挂着「外链壁纸空值态提示（S）」，但那条**已随 10.12.0 
 
 **本轮评审口径**：按既有指示**不派生子代理**，蓝军 / 第三方 / 裁定三角色由**同一个 agent 串行扮演**——这是**降级模式**，独立性已被削弱，不称"独立复核"。实际抓到并改掉的三条（都在 `49c6730`）：① **归因写错了**——本文第一版把"side 组被采样却没被评分"的起点写成 10.10.0，`git show v10.10.0:scripts/wash-cascade.cjs` 现场读到那一版 `WASH_GROUPS` 只有 `corner/fade/desktop`，`git log -S` 也指向 10.12.0；"引用自己账本里的句子也要按 tag 复核"这条纪律本轮又慢了一步。② **配对门的可见边界**补了一条腿（未登记的样式表 = 0，并由真抽取器演"种一张进去"那一侧）。③ 变异腿计数按现数 13 → 14 同步到三份文档。
 
-**同一处要作废一句**：`49c6730` 的提交信息里第 ② 条写的是"frost 组原本没拿到从发货 CSS 现读期望值这一半，现在真的被 buildFixture 调用"——**这句不实**。`frostExpectation()` 自 `25cfff4` 起就已在 `buildFixture()` 里被调用，`49c6730` 的 diff 只动了文档与 `tests/host.frosthooks.test.cjs`（`git show --stat` 为证）。提交信息已经进了历史、不改写，这里按仓库纪律显式标注作废：**那一条不属于 49c6730 的改动，是 25cfff4 已经完成的工作**。
+**同一处要作废一句**：`49c6730` 的提交信息里第 ② 条写的是"frost 组原本没拿到从发货 CSS 现读期望值这一半，现在真的被 buildFixture 调用"——**这句不实**。`frostExpectation()` 自 `25cfff4`（frost 组那一笔）起就已在 `buildFixture()` 里被调用，而 `49c6730` 的 `git show --stat` 只有三份文档 + `tests/host.frosthooks.test.cjs`（1 file 都不涉及 `scripts/wash-cascade.cjs`）。提交信息已经进了历史、不改写，这里按仓库纪律显式标注作废：**那一条不属于 49c6730 的改动，是 25cfff4 已经完成的工作**。
 
 
 ## [10.12.1] - 2026-10-12

@@ -335,3 +335,48 @@ node -e "const s=require(process.env.APPDATA+'/npm/node_modules/@deepseek-ai/dsh
 读数），再谈修复有没有效——10.9.1 / 10.9.2 两轮里报告人看到的那两处旧缺陷正是"版本没到"，而 `CHANGELOG.md` 的 10.9.1 版块、
 `docs/desktop-support.md` 的「已验证 / 未验证（诚实清单）」一节都记着"是版本没到，不是修复无效"：那种报告按第八节的安装路径送达新版即可结案，
 不该开新的修复轮。
+
+## 十、宿主出新 rc 的那天：跑一次预检（`npm run host:preflight`）
+
+**为什么这是一条动作而不是一句提醒**：issue #62 的根因不是"缺工具"，是"没人重复做"——`0.2.0-rc.1`
+起宿主在 boot 阶段读我方 `@deepseek-ai/dsh*` peer 范围，**不满足就整包跳过**（表现是"皮肤一夜全消失"），
+而宿主持续发 rc / alpha。所以"今天最新那个宿主在不在窗内"会自己过期。`scripts/host-preflight.cjs`
+把这个问题变成一条命令，并且**能失败**。
+
+```sh
+# 发布日形态：读 registry + 本机宿主，跑真实判定表
+HTTPS_PROXY=http://127.0.0.1:7890 npm run host:preflight -- --profile-load
+
+# 离线 / CI：judgement 用捕获下来的 packument 跑（不碰网络）
+npm run host:preflight -- --packument tests/fixtures/host_packument_sample.json
+```
+
+读数是这三行（2026-10-13 本机实跑）：判定表说 31 个已发布宿主版本里 **26 个在窗内**、
+按发布时间最新的 `0.2.1-alpha.2`（`2026-10-09T08:18:00.501Z`）**在窗内**，`--profile-load` 那半
+读出真实 web profile 的 bundle 层数与我方是否被挂载。**判定值的来源是宿主自己那份
+`evaluatePluginCompatibility()`**（本机 `@deepseek-ai/dsh` 0.2.0-rc.1），不是本仓库重算的区间——
+机器上没有宿主时它退回零依赖镜像实现 `scripts/lib/peer-window.cjs`，**并在第一行把退回这件事印出来**；
+两份都在时逐版本要求一致，不一致就是镜像漂了（红在"去重生成
+`tests/fixtures/host_compat_verdicts.json`"那句话上，而不是安静地出一份好看的表）。
+
+**四个出口，别混**（与 `wash:check` 同一套纪律，见 issue #102）：
+
+| exit | 含义 | 该做什么 |
+| --- | --- | --- |
+| 0 | 跑过了，且最新发布的宿主在窗内 | 什么都不做，这次预检就是它的目的 |
+| 1 | 跑过了，但**最新**宿主落在窗外（或两份尺子不一致） | 见下"红了怎么办"——**只有"最新"能判红**，5 个 0.0.x / 0.1.0-rc.2-3 的历史版本在窗外是事实不是故障 |
+| 3 | 环境不给跑（没网络、读不到 registry、没宿主），**不算通过** | 补上那一样再跑；把 3 当成 0 就是这次变更要防的那种自欺 |
+| 4 | 要了严格模式（`DSH_PREFLIGHT_STRICT=1`）却没跑成 | 这是流水线/清单坏了，按它点名的那一件（`registry` / `host install` / `profile`）修 |
+
+`--strict` 只是 `DSH_PREFLIGHT_STRICT=1` 的显式写法；发布清单请带它，因为"没跑成"和"跑了且没事"
+在无人值守的通道上必须长得不一样。
+
+**红了怎么办（只有两条诚实出口）**：① 对着那个版本跑一次判定表 + 一次真实 profile 载入，通过才把
+`package.json` 里那六条 peer 的上界抬上去，并**同轮**重生成 `tests/fixtures/host_compat_verdicts.json`
+（判定值必须继续来自宿主自己那份 checker，见第八节 8.6 与 `tests/package.host_compat.test.cjs`）；
+② 不抬，就在 8 份 README 的兼容表里写明"该宿主不支持"并给出用户的处置。**没有第三条**：把表原样留着、
+只在群里说一句"新版可能不兼容"，就是 #62 当时的形状。
+
+**这条动作由谁守**：`tests/host.preflight.test.cjs` 里有一条门要求 `package.json` 有 `host:preflight`
+这个 script、本节文档必须点到命令名与 `--profile-load`、并写明 exit 3 **不算通过**与 exit 1 是"窗外"——
+删掉本节或把措辞磨圆，那条门会红。
