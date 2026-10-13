@@ -100,7 +100,7 @@ const CHANNEL_DIVERGENT_KINDS = ['channel-divergent'];
 const CHANNEL_DIVERGENT_GROUPS = {
 	'.lXshSW_root, ._7yHdaG_panel': {
 		kind: 'channel-divergent',
-		measuredAt: '2026-10-12',
+		measuredAt: '2026-10-13',
 		surfaces: [
 			{ module: 'skeleton/TodoPanel.module.css', npmPackage: 'dsh-client-ui-conversation', npmBase: 'lXshSW', shellBase: 'aSus8q' },
 			{ module: 'queue/QueueDock.module.css', npmPackage: 'dsh-client-ui-conversation', npmBase: '_7yHdaG', shellBase: 'v1kfCW' }
@@ -112,16 +112,24 @@ const CHANNEL_DIVERGENT_GROUPS = {
 			// `tests/host.frosthooks.test.cjs` re-reads them from the installed npm tree and
 			// from the shell's own `app.asar` every run):
 			//   `data-testid="todo-panel"` sits on TodoPanel's `<base>_root` element on both
-			//   channels (1 occurrence each), and `data-queue-dock` sits on QueueDock's
-			//   `<base>_dock` wrapper whose DIRECT child is the `<base>_panel` we frost.
+			//   channels, and `data-queue-dock` sits on QueueDock's `<base>_dock` wrapper whose
+			//   DIRECT child is the `<base>_panel` we frost.
 			// The bare suffix is NOT usable: `_panel` has 12 distinct bases on npm and 12 on
 			// the shell, so unscoped it would frost a dozen other modules' surfaces (issue L1).
 			// The hashes stay in the selector list as the legacy OR-branch for the `0.1.x`
 			// line, whose bytes no machine here can read.
 			anchors: ['[data-testid="todo-panel"]', '[data-queue-dock] > [class$="_panel"]'],
 			hooksMeasuredOn: ['npm', 'shell'],
-			npmOccurrences: 1,
-			shellOccurrences: 1
+			// How many times each channel stamps the hook. Not decoration: `includes(token)` proves
+			// the string is there, and a host that stamps it on a SECOND element would pass that
+			// check while our rule starts painting a surface nobody claimed. Counted per token
+			// because the two hooks are stamped by different components.
+			// Measured 2026-10-13: npm 0.2.0-rc.1's `dsh-client-ui-conversation/lib/client.js` and
+			// the shell's `app.asar` each stamp both hooks exactly once.
+			hookOccurrences: {
+				npm: { "todo-panel": 1, "data-queue-dock": 1 },
+				shell: { "todo-panel": 1, "data-queue-dock": 1 }
+			}
 		},
 		why:
 			'The rule adds `backdrop-filter: blur(20px) saturate(140%)` to the todo panel and the queue dock under ' +
@@ -138,7 +146,7 @@ const CHANNEL_DIVERGENT_GROUPS = {
 	},
 	'.uV2eYG_root': {
 		kind: 'channel-divergent',
-		measuredAt: '2026-10-12',
+		measuredAt: '2026-10-13',
 		surfaces: [
 			{ module: 'skeleton/InputBar.module.css', npmPackage: 'dsh-client-ui-conversation', npmBase: 'uV2eYG', shellBase: 'RlGAzG' }
 		],

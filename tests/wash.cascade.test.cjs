@@ -318,8 +318,8 @@ test('the verdict table claims every reading, and each claim is in a named issue
 	// split-brain this table exists to prevent, in a new costume.
 	const groups = [...new Set(WASH_CHECKS.map((c) => c.group))].sort();
 	assert.deepEqual(groups, [...WASH_GROUPS].sort(), 'every declared group has a check, and every check sits in a declared group');
-	assert.deepEqual(groups, ['corner', 'desktop', 'fade', 'side'],
-		'the groups are #96 (corner: the frame, its content corner and its caption ::before), #97 (fade), #99 (desktop) and A1 (side, the sidebar foot plane) — a new issue adds a group HERE');
+	assert.deepEqual(groups, ['corner', 'desktop', 'fade', 'frost', 'side'],
+		'the groups are #96 (corner: the frame, its content corner and its caption ::before), #97 (fade), #99 (desktop), A1 (side, the sidebar foot plane) and A1\'s second half (frost, the union anchors as computed values) — a new issue adds a group HERE');
 	for (const check of WASH_CHECKS) {
 		assert.ok(WASH_GROUPS.includes(check.group), `${check.id} claims an unknown group ${check.group}`);
 		assert.ok(typeof check.ok === 'function' && check.msg, `${check.id} needs both a predicate and a message`);
@@ -558,6 +558,9 @@ const GROUP_SAMPLE_ANCHOR = {
 	// group's fields checked rather than skipped, and the guard reddened when `side` was
 	// added to WASH_GROUPS without a row here.
 	side: 'function fixtureHtml(parts) {',
+	// 10.13.0: the frost group samples off the SAME page too. Without a row here the field guard
+	// would skip its five checks, which is exactly how `side` nearly arrived unchecked.
+	frost: 'function fixtureHtml(parts) {',
 	desktop: 'const DESKTOP_PAGE_SCRIPT = `'
 };
 const CASCADE_SRC = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'wash-cascade.cjs'), 'utf8');
@@ -1507,4 +1510,112 @@ test('the flush claim is an observation about two boxes, and refuses a page wher
 	assert.equal(right.ok({ insetVarOnFoot: '', footMarginRight: '' }), false, 'an unresolvable variable must redden, not compare empty to empty');
 	assert.equal(right.ok({ insetVarOnFoot: 'MISSING', footMarginRight: 'MISSING' }), false, 'double MISSING must redden');
 	assert.equal(right.ok({ insetVarOnFoot: '12px', footMarginRight: '-12px' }), true, 'control: the host value with our bleed passes');
+});
+
+// ── Roadmap A1, 10.13.0: the frost group ──────────────────────────────────
+
+/**
+ * A healthy frost trio, in the shape a real engine answers (Chrome serializes `saturate(140%)` as
+ * `saturate(1.4)`). Written as rows rather than run through Chrome so the verdict table itself is
+ * falsifiable on a machine with no browser and no host — CI's `test` job has neither, and a group
+ * whose falsifiability needs Chrome is a group CI never breaks.
+ */
+function frostTrio(flag) {
+	const blur = 'blur(20px) saturate(1.4)';
+	const mk = (state) => ({ state, frostRef: blur, frostTodoPanel: blur, frostDockPanel: blur, frostPanelDecoy: 'none' });
+	const rows = [mk('plain'), mk('wash'), mk('washed-again')];
+	const every = (patch) => rows.forEach(patch);
+	if (flag === 'anchorDied') every((r) => { r.frostTodoPanel = 'none'; });
+	if (flag === 'dockDied') every((r) => { r.frostDockPanel = 'none'; });
+	if (flag === 'scopeLeaked') every((r) => { r.frostPanelDecoy = blur; });
+	// A browser that cannot compute the filter reports `none` for everything — including the
+	// reference box, which is how the group tells "the rule died" apart from "this engine cannot".
+	if (flag === 'engineCannotBlur') every((r) => { r.frostRef = 'none'; r.frostTodoPanel = 'none'; r.frostDockPanel = 'none'; });
+	if (flag === 'washMovedIt') rows[1].frostTodoPanel = 'none';
+	return rows;
+}
+const frostIds = (flag) => checkReadings(frostTrio(flag), ['frost']).map((p) => p.split(':')[0]).sort();
+
+test('the frost verdict table is falsifiable, one claim at a time', () => {
+	assert.deepEqual(frostIds(null), [], 'control: both anchors reach, the decoy stays clean, and the wash moves nothing — that is the page the release claims');
+	assert.deepEqual(frostIds('anchorDied'), ['frost-todo-panel-anchor-reaches'],
+		'a dead todo-panel anchor reddens ONLY its own claim; the dock and the decoy are untouched, so a red here names one joint');
+	assert.deepEqual(frostIds('dockDied'), ['frost-dock-panel-anchor-reaches'],
+		'the dock claim is its own joint — the child combinator is exactly the part a text gate cannot check');
+	assert.deepEqual(frostIds('scopeLeaked'), ['frost-decoy-panel-untouched'],
+		'an unscoped [class$="_panel"] reaches a foreign panel and nothing else moves — the issue-L1 shape, measured as pixels');
+	assert.deepEqual(frostIds('washMovedIt'), ['frost-not-wash-gated'],
+		'a frosting that only appears without a wallpaper is a different defect from an anchor that never matched, and it gets its own red');
+	// The refusal leg: an engine that cannot compute the filter must not report "no frosting".
+	assert.deepEqual(frostIds('engineCannotBlur'),
+		['frost-dock-panel-anchor-reaches', 'frost-engine-computes-backdrop-filter', 'frost-todo-panel-anchor-reaches'],
+		'the precondition and both reach claims go red together, while the decoy claim stays green — the group refuses to claim rather than claiming the rule died');
+	const blind = frostTrio(null).map((r) => Object.assign({}, r));
+	delete blind[0].frostRef;
+	assert.match(checkReadings(blind, ['frost'])[0], /^checker: frost-/,
+		'a field the fixture stopped sampling is a broken CHECKER, not a verdict about the page');
+});
+
+test('the frost fixture refuses a sheet whose anchor or declaration is gone', () => {
+	// Both legs run with no host and no browser, because the refusal happens while the sheet is
+	// read — before any host CSS is consulted. A group that silently built a thinner page is the
+	// failure this repository keeps being corrected for.
+	const noAnchor = BUNDLE.replace(
+		'const TODO_PANEL_SELECTOR = "[data-testid=\\"todo-panel\\"]";',
+		'const TODO_PANEL_SELECTOR = "[data-testid=\\"todo-list\\"]";'
+	);
+	assert.notEqual(noAnchor, BUNDLE, 'mutation ① has to change the bundle source');
+	assert.throws(() => buildFixture({ source: noAnchor }), /no rule stamped/,
+		'a sheet with no todo-panel anchor must stop the build — the fixture would otherwise read three boxes that no rule was ever written for');
+
+	const noDecl = BUNDLE.replace('"    backdrop-filter: blur(20px) saturate(140%);",', '');
+	assert.notEqual(noDecl, BUNDLE, 'mutation ② has to change the bundle source');
+	assert.throws(() => buildFixture({ source: noDecl }), /declares no backdrop-filter/,
+		'the reference box gets its inline style from the shipped declaration; with no declaration there is nothing to compare, and inventing one would grade a page nobody ships');
+});
+
+test('the CLI grades every group the host page feeds — no list for a human to forget', () => {
+	// `side` was added in 10.10.0 with a CHANGELOG sentence saying a new group must be added to the
+	// CLI's list or it silently does not run — and it never was added. The host stage has been
+	// grading `corner`/`fade` only since, which is why the list is now DERIVED from WASH_GROUPS
+	// rather than typed: the only honest version of "remember to edit this" is "no edit needed".
+	assert.match(CASCADE_SRC, /const hostPageGroups = WASH_GROUPS\.filter\(\(g\) => g !== 'desktop'\);/,
+		'the host stage must grade every declared group except the one with its own fixture');
+	assert.match(CASCADE_SRC, /\['host', hostPageGroups,/, 'and it must pass that derived list, not a copy');
+	assert.ok(!/gradeStage\('host', \['corner', 'fade'\]/.test(CASCADE_SRC),
+		'the typed two-group list must not come back — it is the shape that left side/frost ungraded');
+});
+
+test('mutation: the engine proves the frosting comes from the anchors, not from a hash', { skip: RUN ? false : skipWhy }, () => {
+	// Five ways the A1 union can rot, each aimed at one joint, and the first of them is the leg the
+	// text gates cannot make at all: delete the hash half of the selector list and NOTHING may move,
+	// because the boxes in this fixture carry class names the sheet never mentions. If the readings
+	// stayed put, the anchors are doing the work — that is the whole promise, read off a page.
+	const redIds = (parts) => {
+		const r = measure({ parts });
+		assert.ok(!r.error, `the mutated probe failed: ${r.error}`);
+		return checkReadings(r.readings, ['frost']).map((x) => x.split(':')[0]).sort();
+	};
+	const base = buildFixture();
+	assert.deepEqual(redIds(base), [], 'the shipped sheet must read clean on the frost group before anything is mutated');
+
+	const noHash = { ...base, material: base.material.replace(', .lXshSW_root, ._7yHdaG_panel', '') };
+	assert.notEqual(noHash.material, base.material, 'mutation ① has to change the sheet');
+	assert.deepEqual(redIds(noHash), [],
+		'the hash half must be load-BEARING-free here: with the boxes named fixtureRolled_*, the frosting can only come from the anchors');
+
+	const renamedAnchor = { ...base, material: base.material.replace('[data-testid="todo-panel"]', '[data-testid="todo-list"]') };
+	assert.notEqual(renamedAnchor.material, base.material, 'mutation ② has to change the sheet');
+	assert.deepEqual(redIds(renamedAnchor), ['frost-todo-panel-anchor-reaches'],
+		'a renamed host attribute stops the todo panel matching, and it is the only claim that moves');
+
+	const unscoped = { ...base, material: base.material.replace('[data-queue-dock] > [class$="_panel"]', '[class$="_panel"]') };
+	assert.notEqual(unscoped.material, base.material, 'mutation ③ has to change the sheet');
+	assert.deepEqual(redIds(unscoped), ['frost-decoy-panel-untouched'],
+		'dropping the scope frosts every _panel on the page — 12 bases on npm, 12 on the shell — and only the decoy reading shows it');
+
+	const dockRenamed = { ...base, material: base.material.replace('[data-queue-dock] >', '[data-queue-strip] >') };
+	assert.notEqual(dockRenamed.material, base.material, 'mutation ④ has to change the sheet');
+	assert.deepEqual(redIds(dockRenamed), ['frost-dock-panel-anchor-reaches'],
+		'the dock hook is the other half of the child selector; a host that renames it takes the frosting off the queue dock and nothing else');
 });

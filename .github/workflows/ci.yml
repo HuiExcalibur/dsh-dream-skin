@@ -166,12 +166,22 @@ jobs:
           # Each stage publishes its own field names into the readings; one per fixture is
           # the cheapest proof that all three pages really ran, as opposed to one page
           # running three times and the other two skipping quietly.
-          for field in '"corner"' '"surfaceBg"' '"probeBg"'; do
+          for field in '"corner"' '"surfaceBg"' '"probeBg"' '"frostRef"'; do
             if ! grep -q "$field" "$LOG"; then
               echo "::error::no reading row contains $field — the stage that samples it never ran."
               exit 1
             fi
           done
+          # Sampling is not scoring. `side` was sampled from 10.10.0 on and scored by NOBODY in
+          # this job (the CLI handed the host stage a typed two-group list), so the verdict line's
+          # own "graded …" list is what gets checked here — a new host-page group has to be added
+          # to this string, which is loud, instead of silently joining the readings and not the
+          # judgement.
+          if ! grep -q 'graded host\[corner/fade/side/frost\]' "$LOG"; then
+            echo "::error::the host stage did not grade every group its page feeds."
+            grep -n 'wash cascade OK' "$LOG"
+            exit 1
+          fi
           if ! grep -q 'wash cascade OK' "$LOG"; then
             echo "::error::the gate never printed its OK verdict."
             exit 1

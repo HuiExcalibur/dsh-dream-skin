@@ -19,7 +19,9 @@
  *   2. MEASUREMENT (both channels' own shipped bytes): the anchors `carriedBy` names must be
  *      published by npm AND by the official shell — re-read from the installed host tree and
  *      from `app.asar`, never from a copied constant, including the structural claim that the
- *      queue dock renders its panel as a direct child.
+ *      queue dock renders its panel as a direct child. The host tree is scanned as a CORPUS (every
+ *      package that ships a `lib/client.js`, not only the one the registry names), because an
+ *      attribute anchor is only safe while exactly one component stamps it.
  *
  * Two exits (issue #102): no host / no shell ⇒ `t.skip` naming which halves could not be read;
  * a pairing violation ⇒ red, with the rule quoted.
@@ -34,7 +36,7 @@ const path = require("node:path");
 const ROOT = path.join(__dirname, "..");
 const { extractSheets, parseBlocks } = require("../scripts/craft-audit.cjs");
 const { DEAD_HASHES, CHANNEL_DIVERGENT_GROUPS } = require("../scripts/data/dead-hashes.cjs");
-const { findHostRoot } = require("../scripts/host-consumers.cjs");
+const { findHostRoot, listFiles } = require("../scripts/host-consumers.cjs");
 const shell = require("../scripts/lib/desktop-shell.cjs");
 
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -168,8 +170,17 @@ function hookTokensOf(anchor) {
 	return out;
 }
 
+/** Which of the read packages publish a hook token. A hook claimed by ONE component stops being
+ *  an anchor the moment a second component stamps it too — then the rule paints a surface nobody
+ *  asked for, which is the issue-L1 shape arriving through an attribute instead of a class
+ *  suffix. Measured 2026-10-13: `todo-panel` and `data-queue-dock` appear in exactly one npm
+ *  package each (`dsh-client-ui-conversation`) and once in the shell's `app.asar`. */
+function publishersOf(textByPackage, token) {
+	return Object.entries(textByPackage || {}).filter(([, t]) => t && t.includes(token)).map(([p]) => p);
+}
+
 /** Exit 2's pure half: given both channels' bytes, does every carriedBy claim still hold? */
-function measureProblems({ registry = CHANNEL_DIVERGENT_GROUPS, npmTexts, shellText }) {
+function measureProblems({ registry = CHANNEL_DIVERGENT_GROUPS, npmTexts, shellText, npmTextByPackage }) {
 	const problems = [];
 	const channels = [];
 	if (npmTexts && npmTexts.length) channels.push(["npm", npmTexts.join("\n")]);
@@ -190,10 +201,27 @@ function measureProblems({ registry = CHANNEL_DIVERGENT_GROUPS, npmTexts, shellT
 		const want = [...new Set(hostHooks.flatMap(hookTokensOf))];
 		if (!want.length) continue;
 		for (const [name, text] of channels) {
+			const declared = (cb.hookOccurrences || {})[name];
 			for (const token of want) {
 				if (!text.includes(token)) {
 					problems.push(`${group.slice(0, 40)}: the ${name} channel does not publish "${token}" — `
 						+ "the anchor this entry claims is not there, so the rule is NOT carried hash-free");
+					continue;
+				}
+				// Presence is not exclusivity-within-a-component: a host that stamps the same hook on
+				// a SECOND element passes `includes()` while our rule starts painting a surface nobody
+				// claimed. The registry therefore has to say HOW MANY times, and that number is
+				// re-counted from the channel's bytes on every run rather than trusted.
+				const seen = text.split(token).length - 1;
+				const wantCount = declared ? declared[token] : undefined;
+				if (wantCount === undefined) {
+					problems.push(`${group.slice(0, 40)}: carriedBy declares no expected "${token}" count for ${name} `
+						+ `(measured ${seen}) — a presence-only claim cannot tell one stamp from two, and frosting `
+						+ `the second element would be the issue-L1 shape again`);
+				} else if (seen !== wantCount) {
+					problems.push(`${group.slice(0, 40)}: "${token}" is stamped ${seen} times on ${name}, the registry says `
+						+ `${wantCount} — ${seen > wantCount ? "a second element now carries the hook this rule matches, so it would be frosted too"
+							: "the hook is thinning out; this anchor may no longer be the one the rule needs"}`);
 				}
 			}
 			if (!text.includes("data-queue-dock")) continue;
@@ -206,6 +234,21 @@ function measureProblems({ registry = CHANNEL_DIVERGENT_GROUPS, npmTexts, shellT
 			if (!directChild) {
 				problems.push(`${group.slice(0, 40)}: on ${name} the element after "data-queue-dock" is no longer rendered `
 					+ "as the dock's direct `.panel` child — `[data-queue-dock] > [class$=\"_panel\"]` must be re-measured");
+			}
+		}
+		const owner = (entry.surfaces || [])[0] && (entry.surfaces || [])[0].npmPackage;
+		// Skipped, not silently satisfied, when the caller has no per-package corpus: "I could not
+		// read who stamps this" must never be reported as "one component stamps this".
+		if (npmTextByPackage) {
+			for (const token of want) {
+				const pubs = publishersOf(npmTextByPackage, token);
+				if (pubs.length > 1) {
+					problems.push(`${group.slice(0, 40)}: "${token}" is stamped by ${pubs.length} npm packages [${pubs.join(",")}] `
+						+ `— the anchor stopped belonging to ${owner} alone, so frosting it would paint a foreign surface (the issue-L1 shape, `
+						+ "arriving through an attribute this time)");
+				} else if (pubs.length === 1 && owner && pubs[0] !== owner) {
+					problems.push(`${group.slice(0, 40)}: "${token}" is published by ${pubs[0]}, not the claimed owner ${owner}`);
+				}
 			}
 		}
 	}
@@ -324,6 +367,36 @@ test("A1 pairing mutations: each way the promise can rot reddens its own leg", (
 		return measureProblems({ npmTexts: [npmNested], shellText: shellNested });
 	}, /dock's direct `\?panel`? child|no longer rendered/]);
 
+	// The attribute anchor is only as exclusive as the corpus says. Both legs read a synthetic
+	// corpus whose owner is the package the registry names, so the reddening is attributable to
+	// the publisher set alone and not to a fixture that was already wrong.
+	legs.push(["a second npm package starts stamping the same hooks", () => {
+		const owner = "dsh-client-ui-conversation";
+		const byPkg = { [owner]: npmFake(), "dsh-client-ui-planner": hostFake("todo-panel") };
+		assert.deepEqual(measureProblems({ npmTexts: [npmFake()], shellText: shellFake(), npmTextByPackage: { [owner]: npmFake() } }), [],
+			"the one-publisher synthetic corpus must pass before it is mutated");
+		return measureProblems({ npmTexts: [npmFake()], shellText: shellFake(), npmTextByPackage: byPkg });
+	}, /stamped by 2 npm packages/]);
+
+	legs.push(["the hooks' only publisher stopped being the package the registry claims", () => {
+		const byPkg = { "dsh-client-ui-something-else": hostFake("todo-panel") };
+		return measureProblems({ npmTexts: [npmFake()], shellText: shellFake(), npmTextByPackage: byPkg });
+	}, /not the claimed owner/]);
+
+	legs.push(["the host starts stamping the same hook on a second element", () => {
+		const doubled = shellFake().replace('"data-queue-dock": ""', '"data-queue-dock": "", "data-queue-dock": ""');
+		assert.ok(doubled !== shellFake(), "the double-stamp mutation did not change the fixture — it would test nothing");
+		assert.deepEqual((doubled.match(/data-queue-dock/g) || []).length, 2,
+			"the double-stamp fixture must actually contain the hook twice, or this leg measures nothing");
+		return measureProblems({ npmTexts: [npmFake()], shellText: doubled });
+	}, /stamped 2 times on shell, the registry says 1/]);
+
+	legs.push(["an excuse that stopped saying how many times the host stamps it", () => {
+		const clone = JSON.parse(JSON.stringify(CHANNEL_DIVERGENT_GROUPS));
+		delete clone[".lXshSW_root, ._7yHdaG_panel"].carriedBy.hookOccurrences;
+		return measureProblems({ registry: clone, npmTexts: [npmFake()], shellText: shellFake() });
+	}, /declares no expected "todo-panel" count/]);
+
 	for (const [label, mutate, expect] of legs) {
 		const problems = mutate();
 		assert.ok(problems.length > 0, `mutation "${label}" produced NO problem — the gate cannot see this rot`);
@@ -346,14 +419,41 @@ test("A1 measurement: the anchors are published on npm AND on the official shell
 		return;
 	}
 	const pkgs = [...new Set(Object.values(CHANNEL_DIVERGENT_GROUPS).flatMap((e) => (e.surfaces || []).map((s) => s.npmPackage)))];
+	// Every package that ships a client bundle, not only the ones the registry names: the claim
+	// being measured is "this hook belongs to one component", and a claim re-read only from the
+	// named package can never notice a neighbour starting to stamp the same attribute.
+	const npmTextByPackage = {};
+	for (const d of fs.readdirSync(root, { withFileTypes: true })) {
+		if (!d.isDirectory()) continue;
+		const f = path.join(root, d.name, "lib", "client.js");
+		if (!fs.existsSync(f)) continue;
+		npmTextByPackage[d.name] = fs.readFileSync(f, "latin1");
+	}
 	const npmTexts = [];
 	for (const p of pkgs) {
-		const f = path.join(root, p, "lib", "client.js");
-		assert.ok(fs.existsSync(f), `the registry names npm package ${p} and it is not installed — re-measure before this sentence stays`);
-		npmTexts.push(fs.readFileSync(f, "latin1"));
+		assert.ok(npmTextByPackage[p],
+			`the registry names npm package ${p}, but no ${p}/lib/client.js is installed — re-measure before this sentence stays`);
+		npmTexts.push(npmTextByPackage[p]);
 	}
 	const shellText = shell.readShellAsar();
 	assert.ok(shellText && shellText.length > 1e7, `the shell bundle read suspiciously small (${shellText && shellText.length} bytes)`);
-	const problems = measureProblems({ npmTexts, shellText });
+	const problems = measureProblems({ npmTexts, shellText, npmTextByPackage });
 	assert.deepEqual(problems, [], `the hash-free anchors no longer hold on both channels:\n${problems.join("\n")}`);
+
+	// The corpus is the measurement, so name what it counted: one publisher per hook, and it is the
+	// package the registry claims. Written out rather than only asserted, because a reader who
+	// re-runs this wants the numbers, not a green tick.
+	console.log(`frosthooks corpus: ${Object.keys(npmTextByPackage).length} npm client bundles read;`);
+	for (const [group, entry] of Object.entries(CHANNEL_DIVERGENT_GROUPS)) {
+		if (!entry.carriedBy) continue;
+		const owner = (entry.surfaces || [])[0] && (entry.surfaces || [])[0].npmPackage;
+		const hostHooks = (entry.carriedBy.anchors || []).filter((a) => !a.includes("data-dsh-dream-skin"));
+		for (const token of [...new Set(hostHooks.flatMap(hookTokensOf))]) {
+			const pubs = publishersOf(npmTextByPackage, token);
+			const occ = entry.carriedBy.hookOccurrences || {};
+			console.log(`  ${group.slice(0, 26)}: "${token}" — npm publishers [${pubs.join(", ")}]${owner ? ` (owner ${owner})` : ""}, `
+				+ `stamps npm ${(npmTexts.join("\n").split(token).length - 1)}/${((occ.npm || {})[token] ?? "?")} `
+				+ `declared, shell ${(shellText.split(token).length - 1)}/${((occ.shell || {})[token] ?? "?")} declared`);
+		}
+	}
 });

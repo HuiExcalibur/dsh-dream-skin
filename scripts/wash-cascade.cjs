@@ -526,6 +526,51 @@ function cornerTokens(source) {
 	return out;
 }
 
+/**
+ * Roadmap A1, 10.13.0 — what the frosting rule DECLARES, read out of the shipped material sheet.
+ *
+ * Why a fixture needs this: the pairing gate proves the anchor is in the sheet and in both
+ * channels' bytes, which is a claim about TEXT. "The selector reached a box on a page" is a
+ * different claim, and this repository has been corrected for confusing the two ("声明不等于像素").
+ * The value is taken from the rule rather than typed here for the same reason the corner fixture
+ * reads its colours from the bundle: a check that compares the engine against a number copied into
+ * this file grades the copy, not the page.
+ *
+ * Refuses to invent: no rule stamped with the todo-panel anchor, or no blur/saturate inside it,
+ * throws. A fixture that could not find what it claims to measure has to say so at build time, not
+ * read `none` and call that a result.
+ */
+function frostExpectation(materialCss) {
+	const rule = walkCssBlocks(materialCss).find((b) => /\[data-testid="todo-panel"\]/.test(b.sel));
+	if (!rule) {
+		throw new Error('the shipped material sheet carries no rule stamped `[data-testid="todo-panel"]` — the frost group would be '
+			+ 'measuring a page where the A1 anchor was never published, and every reading below would be a fact about a rule that does not exist');
+	}
+	const decl = (rule.body.match(/(?:^|[;\s])backdrop-filter\s*:\s*([^;]+)/i) || [])[1];
+	if (!decl) {
+		throw new Error(`the frost rule ("${rule.sel.slice(0, 60)}…") declares no backdrop-filter — the group would have nothing to reach`);
+	}
+	const blur = decl.match(/blur\(\s*([0-9.]+)(px|rem|em)?\s*\)/);
+	const sat = decl.match(/saturate\(\s*([0-9.]+)(%)?\s*\)/);
+	if (!blur || !sat) {
+		throw new Error(`the frost rule's backdrop-filter reads "${decl.trim()}", which is not a blur() + saturate() the engine can be graded against`);
+	}
+	// Chrome serializes `saturate(140%)` as `saturate(1.4)`; the expectation has to be written the
+	// way the engine writes it, or the comparison is about syntax rather than about pixels.
+	const satValue = sat[2] ? String(Number(sat[1]) / 100) : sat[1];
+	return {
+		sel: rule.sel,
+		raw: decl.trim(),
+		blur: `blur(${blur[1]}${blur[2] || 'px'})`,
+		saturate: `saturate(${satValue})`,
+		// The rule lives inside `@supports (backdrop-filter: …)`. The engine's own answer is what
+		// licenses the readings, so the group asks for it (the ref box) instead of assuming the
+		// browser qualifies — a browser that cannot compute blur would otherwise read `none` on
+		// every box and look like a rule that stopped matching.
+		supportsGated: rule.conditional === true
+	};
+}
+
 /** Assemble the three inputs. Missing inputs are errors, never thin fixtures. */
 function buildFixture(opts = {}) {
 	const root = opts.root || DEFAULT_HOST_ROOT;
@@ -534,6 +579,9 @@ function buildFixture(opts = {}) {
 	const material = sheets.find((s) => /material/.test(s.id));
 	if (!material) throw new Error('the material sheet is not in the bundle — the probe has nothing to measure');
 	const parts = { material: material.css, hostRoot: root, corner: opts.corner || cornerTokens(source) };
+	// Read from OUR OWN sheet before anything about the host is consulted: a frost rule that went
+	// missing from the bundle must not hide behind "this machine has no host".
+	parts.frost = frostExpectation(material.css);
 	for (const spec of HOST_PACKAGES) {
 		// Issue #102 + blue-team B4: three states, three different doors.
 		//   no host install at all            -> environment skip
@@ -601,6 +649,10 @@ function fixtureHtml(parts) {
 		throw new Error('the host\'s own inset convention (the rule that DECLARES --dsh-sidebar-inline-padding, plus the region above the foot) was not read — '
 			+ 'the -4px / -12px / 4px our alignment rule writes would then be literals compared against nothing');
 	}
+	if (!parts.frost || !parts.frost.raw) {
+		throw new Error('the frosting declaration was not read out of the shipped material sheet — the frost group would have to INVENT '
+			+ 'the value it claims the anchors reach (build the fixture through buildFixture())');
+	}
 	const fadeClass = parts.fadeClass;
 	const chatClass = parts.chatClass;
 	// Every CSS string below is interpolated into the page inside a `<style>` element, so one
@@ -619,6 +671,14 @@ function fixtureHtml(parts) {
 			throw new Error(`the fixture cannot inject \`${key}\`: it carries "</", which would close a <style> element `
 				+ 'and turn the measured page into a different document from the one the gate believes it built');
 		}
+	}
+	// The frost declaration is interpolated into an ATTRIBUTE (`style="backdrop-filter:…"`), where
+	// the hazard is a quote or an angle bracket rather than `</`. A ref box that is not the element
+	// the checks think they built would grade a different page — refuse instead of escaping it into
+	// something else.
+	if (/["'<>]/.test(parts.frost.raw)) {
+		throw new Error(`the frost declaration reads "${parts.frost.raw}", which cannot be injected into a style attribute — `
+			+ 'the reference box would stop being the element the anchor readings are compared against');
 	}
 	const inJs = JSON.stringify('.' + fadeClass);
 	const inJsChat = JSON.stringify('.' + chatClass);
@@ -690,6 +750,21 @@ ${parts.insetRegionRule}</style>
   <div data-shell-overlay>titlebar</div>
 </div>
 <i id="sidebar-fill-ref"></i>
+<section id="frost-stage">
+  <!-- ROADMAP A1, 10.13.0 — the union anchors, read as pixels.
+       Both boxes carry a base name this sheet NEVER mentions (fixtureRolled_*), which is what
+       "the host re-rolled its CSS-module hashes" looks like from the page's side. So the only way
+       either reading can come out frosted is the attribute branch reaching a real element — the
+       claim the pairing gate makes about TEXT and cannot make about boxes.
+       The third element is the scoping half: its class also ends in "_panel", but it is not the
+       dock's child, and the scoped anchor measured 12 distinct _panel bases on npm and 12 on the
+       shell. Un-scope that selector and this box starts blurring — which is the issue-L1 failure,
+       arriving through a suffix instead of a class. -->
+  <div class="fixtureRolled_root" data-testid="todo-panel" id="frost-todo">the todo panel under a re-rolled base name</div>
+  <div data-queue-dock id="frost-dock"><div class="fixtureRolled_panel" id="frost-dock-panel">the dock's direct child panel</div></div>
+  <div class="fixtureForeign_panel" id="frost-decoy-panel">a _panel that belongs to nobody's dock</div>
+</section>
+<i id="frost-ref" style="backdrop-filter:${parts.frost.raw}"></i>
 <script>
 (function () {
   var frame = document.querySelector('[data-shell-frame]');
@@ -708,6 +783,14 @@ ${parts.insetRegionRule}</style>
   var footActions = document.querySelector(${inJsActions});
   var footSettings = document.querySelector(${inJsSettings});
   var footDecoy = document.querySelector('.fixture-decoy_footerActions');
+  // The frost boxes (Roadmap A1): two surfaces carrying our hash-free anchors under a base name the
+  // sheet never mentions, one _panel that is NOT the dock's child, and the reference box whose
+  // inline style is the shipped declaration verbatim — the page's own answer to "what does that
+  // text compute to", so no number from this file enters the comparison.
+  var frostRef = document.getElementById('frost-ref');
+  var frostTodo = document.getElementById('frost-todo');
+  var frostDockPanel = document.getElementById('frost-dock-panel');
+  var frostPanelDecoy = document.getElementById('frost-decoy-panel');
   var WASH = 'data-dsh-dream-skin-wash';
   var out = [];
   // ── the layer reader ──────────────────────────────────────────────────────
@@ -865,6 +948,15 @@ ${parts.insetRegionRule}</style>
       decoyMarginLeft: footDecoy ? getComputedStyle(footDecoy).marginLeft : 'MISSING',
       decoyBg: footDecoy ? getComputedStyle(footDecoy).backgroundColor : 'MISSING',
       decoyBorder: footDecoy ? getComputedStyle(footDecoy).borderTopWidth : 'MISSING',
+      // ── ROADMAP A1, 10.13.0 — the union anchors as COMPUTED VALUES ──
+      // frostRef is an element styled INLINE with the shipped declaration text, so it reports what
+      // this engine makes of that text. The two anchor boxes are then graded against it: an anchor
+      // that stopped reaching a real element reads 'none' while the ref still blurs, and no number
+      // typed into a file is part of that comparison.
+      frostRef: frostRef ? (getComputedStyle(frostRef).backdropFilter || 'none') : 'MISSING',
+      frostTodoPanel: frostTodo ? (getComputedStyle(frostTodo).backdropFilter || 'none') : 'MISSING',
+      frostDockPanel: frostDockPanel ? (getComputedStyle(frostDockPanel).backdropFilter || 'none') : 'MISSING',
+      frostPanelDecoy: frostPanelDecoy ? (getComputedStyle(frostPanelDecoy).backdropFilter || 'none') : 'MISSING',
       // The surface the caption band sits above. The band's promise (10.9.2) is "look like the
       // content column", so the comparison target has to be MEASURED, not typed into this file —
       // a hand-copied colour here would keep "passing" after the skin, the slider or the token
@@ -1447,7 +1539,7 @@ function cssAlpha(value) {
 	return parts.length < 4 ? 1 : Number(parts[3]);
 }
 
-const WASH_GROUPS = ['corner', 'fade', 'desktop', 'side'];
+const WASH_GROUPS = ['corner', 'fade', 'desktop', 'side', 'frost'];
 
 const WASH_CHECKS = [
 	{ id: 'corner-host-own', requires: ['corner'], group: 'corner', msg: 'plain: the host corner must stay its own 16px', ok: (plain) => plain.corner === '16px' },
@@ -1558,6 +1650,19 @@ const WASH_CHECKS = [
 	// the outcome under competition: the moment the host paints this plane harder than (0,1,0),
 	// it goes red, which is the only reason the erase is in the sheet at all.
 	{ id: 'side-erase-wins-over-host-sheet', requires: ['footBg', 'footShadow', 'footBorderTop'], group: 'side', msg: 'plain: with the host sheet loaded, our erase still owns the foot plane (no fill, no shadow, no border) at (0,1,0) vs (0,1,0) — the win comes from being the later sheet. CANARY, not coverage: today nothing competes, so this reads the same with our declarations stripped (recorded); it exists to fail when a host build starts painting this plane', ok: (plain) => plain.footBg === 'rgba(0, 0, 0, 0)' && plain.footShadow === 'none' && plain.footBorderTop === '0px' },
+	// ── Roadmap A1, 10.13.0: the union anchors, measured as pixels ────────────
+	// The pairing gate proves the anchors are in the sheet and in both channels' bytes. None of
+	// that proves a SELECTOR MATCHES: a typo in the attribute form, a `>` that the host's DOM does
+	// not honour, or an over-broad suffix all leave the text gates untouched while the shell's
+	// frosting is simply gone (or painted somewhere it was never pointed). Every value here is
+	// COMPUTED by the engine, and the expectation is the shipped declaration applied to a reference
+	// box in the same page — so the comparison is between two boxes, not between a box and a
+	// string somebody copied into this file.
+	{ id: 'frost-engine-computes-backdrop-filter', requires: ['frostRef'], group: 'frost', msg: 'plain: the reference box must COMPUTE a blur, or the four readings under it are grading a browser that cannot do this and would report "none" for every rule in the sheet', ok: (plain) => /^blur\(/.test(plain.frostRef || '') },
+	{ id: 'frost-todo-panel-anchor-reaches', requires: ['frostRef', 'frostTodoPanel'], group: 'frost', msg: 'plain: [data-testid="todo-panel"] must frost a box whose class name this sheet never mentions — that is the whole A1 promise: a host that re-rolls its hashes still gets the frosting, and "the selector is in the sheet" was never "the selector matched"', ok: (plain) => plain.frostTodoPanel === plain.frostRef && plain.frostTodoPanel !== 'none' && plain.frostTodoPanel !== 'MISSING' },
+	{ id: 'frost-dock-panel-anchor-reaches', requires: ['frostRef', 'frostDockPanel'], group: 'frost', msg: 'plain: [data-queue-dock] > [class$="_panel"] must reach the dock\'s DIRECT child under a re-rolled base name — the child combinator is the part a text gate cannot check, and the registry claims that shape on both channels', ok: (plain) => plain.frostDockPanel === plain.frostRef && plain.frostDockPanel !== 'none' && plain.frostDockPanel !== 'MISSING' },
+	{ id: 'frost-decoy-panel-untouched', requires: ['frostPanelDecoy'], group: 'frost', msg: 'plain: a box whose class also ends in _panel but that is NOT the dock\'s child stays unblurred — measured, _panel has 12 distinct bases on npm and 12 on the shell, so dropping the scope would frost a dozen foreign surfaces (issue L1, arriving through a suffix)', ok: (plain) => plain.frostPanelDecoy === 'none' },
+	{ id: 'frost-not-wash-gated', requires: ['frostRef', 'frostTodoPanel', 'frostDockPanel', 'frostPanelDecoy'], group: 'frost', msg: 'wash: the frosting is @supports-gated, never wallpaper-gated — a wash may not move it off the two anchors, and may not reach the decoy either (same discipline as side-plane-not-wash-gated)', ok: (plain, wash) => wash.frostTodoPanel === plain.frostTodoPanel && wash.frostDockPanel === plain.frostDockPanel && wash.frostPanelDecoy === plain.frostPanelDecoy },
 ];
 
 /**
@@ -1749,22 +1854,35 @@ function cliOutcome(stages, opts = {}) {
 		outcome.summary = `wash cascade: NOT RUN on ${skips.length}/${stages.length} stage(s) — no verdict was read there.`;
 		return outcome;
 	}
-	outcome.summary = 'wash cascade OK — host: corner 16px -> 0px -> 16px, fade gradient -> none -> gradient, chat mask untouched; '
+	outcome.summary = 'wash cascade OK — graded '
+		// The list is read off the stages, not written here, because this sentence used to enumerate
+		// what it believed had run while the host stage was only handing two of its groups to the
+		// checker. A summary that names more than it graded is the same failure family as a check
+		// that reads undefined and calls it agreement.
+		+ stages.map((s) => `${s.label}[${(s.groups || []).join('/') || 'NOTHING'}]`).join(' ')
+		+ ' — host: corner 16px -> 0px -> 16px, fade gradient -> none -> gradient, chat mask untouched, side foot plane flush with the host region, frost anchors reach their boxes and the scoped _panel does not leak; '
 		+ 'desktop: shell paint opaque -> transparent -> opaque on both skins, with nothing opaque left in the way under a wash; '
 		+ 'coexist: band gone under either lane, and the inline probe says whose declaration is the stronger one.';
 	return outcome;
 }
 
 if (require.main === module) {
-	// Both stages run every time, and a stage that CRASHES is reported instead of ending
-	// the process — review finding F13 (10.8.1): the first version let a
-	// buildDesktopFixture throw escape, which hid the host verdict that had already been
-	// computed and reported a shell-snapshot defect as "cannot read the host".
-	const stages = [
-		gradeStage('host', ['corner', 'fade'], () => measure()),
-		gradeStage('desktop', ['desktop'], () => measureDesktop()),
-		gradeStage('coexist', ['coexist'], () => measureCoexist())
+	// Every group the HOST page feeds must be graded here. `desktop` has its own fixture and its
+	// own grader; everything else is sampled by `measure()`, so a group that joins WASH_GROUPS is
+	// graded by the CLI in the same step — no list in this block to forget. The reason this is
+	// derived rather than typed: `side` was added in 10.10.0 with a CHANGELOG sentence saying a new
+	// group "must be added here or the whole group silently does not run", and it never was — the
+	// CLI has been printing an OK that did not include the side verdicts since then (the engine legs
+	// in `tests/wash.cascade.test.cjs` grade them, which is why nothing was actually unchecked
+	// there). A list a human has to remember to extend is the finding; the gate for it is
+	// `tests/wash.cascade.test.cjs`'s "the CLI grades every host-page group".
+	const hostPageGroups = WASH_GROUPS.filter((g) => g !== 'desktop');
+	const stageSpecs = [
+		['host', hostPageGroups, () => measure()],
+		['desktop', ['desktop'], () => measureDesktop()],
+		['coexist', ['coexist'], () => measureCoexist()]
 	];
+	const stages = stageSpecs.map(([label, groups, run]) => Object.assign(gradeStage(label, groups, run), { label, groups }));
 	const strict = strictRequested(process.env);
 	// Only a strict run that ALREADY skipped pays for the extra probe: on CI the answer to
 	// "what is missing" has to be complete, while off CI nothing about the three states moves.

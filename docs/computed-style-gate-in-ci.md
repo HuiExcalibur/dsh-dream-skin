@@ -52,9 +52,15 @@
 4. **严格模式**：`DSH_WASH_STRICT=1`。
 5. **兜底步骤（防"CI 步骤被改回空转"）**：门跑完之后，再逐字读一遍它自己的输出——
    - 出现 `SKIPPED (environment)` → 红（严格模式还 skip，说明这一步已经不测任何东西了）；
-   - 三张夹具各自的采样字段 `"corner"` / `"surfaceBg"` / `"probeBg"` 必须都出现在读数行里
+   - 三张夹具各自的采样字段 `"corner"` / `"surfaceBg"` / `"probeBg"` / `"frostRef"` 必须都出现在读数行里
      （一张页跑了三遍不算三段夹具都跑）；
-   - 必须出现 `wash cascade OK`。
+   - 必须出现 `wash cascade OK`，且那句里的 **`graded host[corner/fade/side/frost]`** 必须逐字对得上。
+   最后一条是 10.13.0 加的，因为它抓到的正是本仓自己的一条老账：`side` 组自 10.10.0 起**被采样、没被评分**
+   ——CLI 的 host 页名单是手抄的 `['corner','fade']`，而那一版 CHANGELOG 明明写着"新增一组必须改这里，
+   否则整组静默不跑"。采样字段的 grep 看不见这种缺陷（字段一直在行里），只有"报了哪些组"能被看见。
+   现在 host 页的名单**从 `WASH_GROUPS` 现推导**（除 `desktop` 外全部），新增一组就自动进 CLI；这一步的
+   grep 串因此变成一条**要求人来更新**的钉子（组变了而串没变 → 作业红），`tests/wash.cascade.test.cjs`
+   另有同一条的源文本门，两边都在拦"手抄名单回来"。
    这一层存在是因为退出码的正确性依赖脚本**继续**尊重 `DSH_WASH_STRICT`；将来有人删掉那个分支，
    这一步还会红，而不是绿。
 
