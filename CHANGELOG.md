@@ -42,7 +42,7 @@ OLD half wrote back (downgrade path).
 
 ### 四、未验证与边界（别当成已验证）
 
-- **真机装载 0 次**：`lib/index.js` 是宿主半边，只在 DSH 启动时被读；**本机正在跑的实例仍是改动前那份**（未经同意不重启，见 [[feedback-verification-discipline]]）。上面所有读数来自把新旧两份模块**分别挂进临时 `DSH_HOME` 亲跑**，它们证明的是文件语义，不是"某个用户的界面上今天发生了什么"。
+- **真机装载 0 次**（**发布之后作废：用户同意重启，实测见下面「六」**）：`lib/index.js` 是宿主半边，只在 DSH 启动时被读；**本机正在跑的实例仍是改动前那份**（未经同意不重启用户正在使用的实例——这是本项目的验证纪律之一）。上面所有读数来自把新旧两份模块**分别挂进临时 `DSH_HOME` 亲跑**，它们证明的是文件语义，不是"某个用户的界面上今天发生了什么"。
 - **桌面 profile 仍停在 10.12.1**（10.13.0 / 10.13.1 / 10.14.0 都没装进去）：本版不改一个像素，但也没必要为它单独动一次 profile；等 A1 那笔活页读数一起装。
 - **"旧浏览器半边会多采纳一条字符串键"这件事只到"无嵌套、其余键不变"这个精度**：旧客户端的 `loadFromHost()` 会把 `dsh-dream-skin:schema-version` 当一条未知设置采纳进 `stateCache` / `localStorage`。我方逐项核过它唯一的下游：`hasUserState()` 只在 `hostKeys.length === 0` 那一支被调用，而文件里只要有这枚键 `hostKeys` 就不可能为 0，所以那条迁移分支不会被它翻转。但**这条推理是在代码上读的，不是在真旧版本运行时里跑出来的**。
 - **只含戳、不含任何设置的文件**（`{schema-version:"1"}`）我方客户端永远不会写（`pushStateToHost()` 在 `Object.keys(patch).length === 0` 时就 return），只有手工构造的 `set` 请求能造出它；真出现时旧客户端会把这看成"宿主已有状态"而跳过首启迁移。记为边界，不加代码。
@@ -60,6 +60,16 @@ OLD half wrote back (downgrade path).
 - **本轮把 10.13.1 刚固化的那条动作真的用了一次**：`npm run host:preflight -- --profile-load` ⇒ `evaluator: the host's own evaluatePluginCompatibility()`（实装 `@deepseek-ai/dsh` `0.2.0-rc.1`）、`candidates 31 (publish stamps on 31) | in window 26 | dist-tags 0.2.0-rc.2 | newest by stamp: 0.2.1-alpha.2 — INSIDE the window`、profile 侧 `19 bundle layers loaded, 0 skipped / dsh-dream-skin: mounted` ⇒ **exit 0**。
 - **两个 profile 都没动**：web profile 是 `link:` 工作树（代码已新，但**正在跑的实例仍是旧半边**，要用户本人重启才会加载——见上面「未验证」）；桌面 profile 仍 `^10.12.1` / 实装 `10.12.1`（本版不改像素，没必要为它单独动一次，且 §8.4 那段"本机现状"读数已在发布前重读并对上）。
 
+
+### 六、发布之后补：真机装载的第一次读数（2026-10-14 01:45–01:55，用户同意重启）
+
+上面「四、未验证」里那句**真机装载 0 次**到本节为止，到此作废。**这一节是发布之后补的**，`npm` 上那个 tarball 里没有它。
+
+- **重启的是 web profile，不是桌面壳**：动手前 `tasklist` / `Get-CimInstance` 现读——**DSH 本来就没在跑**（`DeepSeek*` 进程 0 个），所以没有代关任何东西，只是按 `dsh --profile web --no-open` 把它起来（PID 18476，监听 `127.0.0.1:3080` 与 `0.0.0.0:3081`）。web profile 里本插件是 `link:` 工作树 ⇒ 起来的这一趟加载的就是 `7a0b67b` 那半新代码。
+- **装载证据**：活页 `__DSH_DREAM_SKIN_STATUS__` = `{plugin:"dsh-dream-skin", build:"10.14.0", status:"ready", shell:"web", skin:"nebula", lastError:null, storageError:null, reason:null}`；我方材质表 `dsh-dream-skin:material:liquid-glass` 与 `dsh-dream-skin-nav-icon` 各 1 张在场，`html[data-dsh-dream-skin-wash]="1"`。启动日志里没有 `skip` / 兼容拒绝行。
+- **状态文件被真宿主半边的盖章验到了**：重启前先备份 `~/.dsh/dream-skin.json`（`122,777 字节`），起页后经我方 loopback API 做一次**值完全相同的再 affirm**（`get` → 用现读到的同一个值 `set` 回 `dsh-dream-skin:sidebar-link`，返回 `{ok:true}`），落盘后 **`122,813 字节`（+36 = 恰好那一枚键的长度）**，且：键集仍是原 17 条设置 + 一枚 `dsh-dream-skin:schema-version:"1"`、**逐条值与备份逐字符相同（changed: none）**、所有值仍是字符串、`get` 的回答里**看不到那枚保留键**（served 17 键、`reservedKeyVisibleToPage:false`，写前写后同一组键同一组值）。备份仍在 `%TEMP%\dream-skin.json.bak-20261013T174541Z`。
+- **A1 的活页读数（web 通道，0.2.0-rc.1）第一次这么干净**：`anchors = {probed:8, drifted:[], notMounted:[".lXshSW_root, ._7yHdaG_panel"], channelAbsent:[], retired:[3 组], pending:false, fadeMatches:1, fadeClasses:["bhn1Oq_fade"]}`。两点值得单独记：① **`[class$="_fade"]` 这条后缀锚点在真页上抓到了宿主这一代重掷出的 `bhn1Oq_fade`**——这正是 10.12.0 写后缀锚点时承诺的事，此前只有夹具读数；② `notMounted` 只剩**一组**，而那组（todo 面板 / 队列坞）经现读确认**元素确实不在场**（`[data-testid="todo-panel"]` 0 个、`[data-queue-dock]` 0 个）——它们要一次真实提问才挂，正是 Roadmap A 组那条 S 的形状。**所以 A1 的验收句在 web 通道上还差这一组**，不是差在漂移。
+- **顺带把"晚修正观察者"在真页上验了一次，并且我差点记错它**：打开侧栏之后我立刻读 `anchors`，`[class$="_fade"]` **还在** `notMounted` 里，我当时按"25 次唤醒预算被启动期 DOM 抖动耗光"拟了条缺陷。停下来量了才看清：**观察者照常工作**，只是这个内置浏览器是 `visibilityState:"hidden"` 的页面，**`setTimeout(…, 300)` 实测延迟到 1112 ms**（另一次 688 ms），去抖后的重采样落在我第一次读取之后；再读就是 `notMounted` 只剩那组按需面、`fadeMatches` 从 `0` 变 `1`、`checkedAt` 往后走了约 3.4 秒。**记这条是为了流程**：两个候选成因（预算耗尽 / 隐藏页定时器被节流）摆在面前时，直接命名根因就是错判（本轮第二次踩同一条纪律），量一遍只要几十秒。附带结论：**这条修正在隐藏页里是"会到、但慢"**，工具方读 `anchors` 时若要判断"晚挂载是否已被撤回"，应等 `checkedAt` 变化或多读一次，而不是读到旧值就当终局。
 
 ## [10.13.1] - 2026-10-13
 
