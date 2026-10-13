@@ -23,6 +23,15 @@
 - `10.14.1` 的 tarball 已经在 npm 上，**它里面那句错命令不会被撤回**（npm 不做覆盖发布）；从 `10.14.2` 起读到的是对的。这就是"发布之后补"的代价形状（第 18 条），只是这次代价小到了只多一个版本号。
 - 桌面 profile 仍停在 10.12.1；本机正在跑的 DSH 实例载的还是 10.14.0 那份宿主半边。
 
+### 四、发布读数
+
+- 代码一笔 `b7d44f5`（7 文件：`docs/desktop-support.md` 命令与读数、`README.md` 本版块、`CHANGELOG.md`（含 10.14.1 §五 的发布读数补记）、`tests/docs.machine_readable.test.cjs` 的命令常量与新腿、`lib/client.js` 的 `PLUGIN_BUILD`、`package.json` / `package-lock.json`）。tag **`v10.14.2`** = `d456fe4…`（peel 到 `b7d44f5`），单 refspec 推成。
+- **CI run 38447603995 六作业全绿**：四份 `test`（Node 18 / 20 / 22 / 24）各 `# tests 524 / # pass 493 / # fail 0 / # skipped 31`；`typecheck` 绿；`Computed-style gate` 打印 `graded host[corner/fade/side/frost] desktop[desktop] coexist[coexist]`。**本机 CI 形态**（`DSH_HOST_ROOT=<空目录>`）：524 / 497 pass / 27 skipped / 0 fail。
+- **npm**：`time` 戳 **`2026-10-13T18:33:52.415Z`**、`dist-tags.latest` = `10.14.2`；**`dist.shasum da2b5a8eaa2ae589723ef3388ba5e0d15e39072f` 与本地 `npm pack` 逐位相同**（24 文件 / 425,453 字节；发布用的就是那个 tarball）。**读侧延迟第八次实遇**：publish 回执已出，约七分钟内 `latest` 仍是 `10.14.1`、`time` 里查不到 `10.14.2`。
+- **从 registry 真装一次**（发布清单 B6）：一次性目录装到 `10.14.2`、24 文件；**本版承重的那份 `docs/desktop-support.md` 165,686 字节与工作树逐字节相同**，且从**安装物里**读那行 derive 命令，确认它**带着 `tr -d '"'` 那一节**——这正是本次重发的唯一目的，从 registry 侧验证到位。同次核对 `README.md` 156,707 / `lib/client.js` 442,975 / `lib/index.js` 15,186 / `docs/publishing-to-npm.md` 30,529 均逐字节相同；`CHANGELOG.md` 与 `tests/` 照旧不在包里。
+- **同日两版 ⇒ 安装命令的写法**：`10.14.1` 发布戳 `18:19:43Z`、`10.14.2` 是 `18:33:52Z`，两者都在 24 小时内 ⇒ 普通用户不带版本号的 `add` / `update` 会被 pnpm 冷静期静默退回旧版，**必须写确切版本号**；桌面 profile 那条安装路径另需 `--config.minimumReleaseAge=0`（见 `docs/publishing-to-npm.md` §8.3 / §8.4）。
+
+
 ## [10.14.1] - 2026-10-14
 
 > **Roadmap C 组那条 M：把"皮肤到底生效没有"做成一个脚本能问出来的东西。** 上一版（10.14.0）之后紧接着做的事：字段语义早已写在 `docs/desktop-support.md`，但**"脚本该怎么问"**这一层一直缺——于是每次有人问"这台机器上到底生效没有"，还是要人开 console。本版补的是那层配方，外加一条**能失败的门**：文档里的键清单与 DOM 标记**从代码现读双向核对**。合计 **229 项质量门全过**（217 调色 + 12 工艺，两池都不碰），全套 `npm test` 515→**524 全绿**。
