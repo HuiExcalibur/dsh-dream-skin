@@ -60,7 +60,13 @@ function claimedKeys(section) {
 	return out.sort();
 }
 
-const ENUM_COMMAND = "grep -oE '\"dsh-dream-skin:[a-z-]+\"' lib/client.js | sort -u";
+// Verbatim, including the `tr -d` stage: `grep -o` emits the WHOLE quoted match,
+// and comparing that to the file's bare keys makes every key look unknown. This
+// is not a hypothetical — writing the section produced exactly that false
+// reading once, so the command a reader is told to run is pinned as a string.
+const Q = '"';
+const SQ = "'";
+const ENUM_COMMAND = `grep -oE ${SQ}${Q}dsh-dream-skin:[a-z-]+${Q}${SQ} lib/client.js | tr -d ${SQ}${Q}${SQ} | sort -u`;
 const SCHEMA_KEY = /export const STATE_SCHEMA_KEY = "([^"]+)"/.exec(hostHalf)[1];
 const SCHEMA_VERSION = /export const STATE_SCHEMA_VERSION = "([^"]+)"/.exec(hostHalf)[1];
 
@@ -162,6 +168,11 @@ test("mutation: a stale row (a key that no longer exists) reddens the gate", () 
 test("mutation: dropping the derive-don't-trust command reddens the gate", () => {
 	const section = recipeSection(doc);
 	assert.match(recipeProblems(section.replace(ENUM_COMMAND, "grep something else")).join(" / "), /enumeration command/);
+	// The `tr -d` stage specifically: without it the command yields QUOTED tokens
+	// and a reader who compares them to file keys concludes nothing matches.
+	const noTr = section.replace("| tr -d '\"' | sort -u", "| sort -u");
+	assert.notEqual(noTr, section, "control: the tr stage must be present to remove it");
+	assert.match(recipeProblems(noTr).join(" / "), /enumeration command/);
 });
 
 test("mutation: renaming a documented DOM marker away from the code reddens the gate", () => {
