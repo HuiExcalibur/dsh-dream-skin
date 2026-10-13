@@ -51,7 +51,15 @@ OLD half wrote back (downgrade path).
 
 ### 五、发布读数
 
-（发版后按 `git show --stat` 现读补齐：tag / CI run 与作业读数 / npm shasum 对照 / registry 真装 / Release。）
+- **提交与 tag**：代码一笔 `7a0b67b`（15 文件，`git show --stat` 现读：`lib/index.js` +77 / `tests/host.persistence.test.cjs` +219 / 8 份 README 各 −1 行 + `CHANGELOG.md` / `README.md` / `docs/desktop-support.md` / `package.json` / `package-lock.json` / `lib/client.js` 的同步笔）。tag **`v10.14.0`** = tag 对象 `84ad93f00b6dff3cbad90ae1e6fcc5e33f9904c3`，peel 到 `7a0b67b`；按纪律**只推单 refspec**（`git push origin refs/tags/v10.14.0`），一次成功，不动别的 tag。
+- **CI run 38435414822 六作业全绿**：四份 `test`（Node 18 / 20 / 22 / 24）各自 `# tests 515 / # pass 484 / # fail 0 / # skipped 31`——跳过数与上一版相同，本轮新增的 6 条**一条都不跳过**（它们只需要一个临时目录）；`typecheck` 绿；`Computed-style gate` 的严格跑打印 `wash cascade OK — graded host[corner/fade/side/frost] desktop[desktop] coexist[coexist]`（10.13.0 那条"自报评了哪些组"的句子照旧在场）。
+- **本机 CI 形态**（推前重跑，纪律第 8 条）：`DSH_HOST_ROOT=<空目录> npm test` ⇒ **515 / 488 pass / 27 skipped / 0 fail**。本机 27 跳 vs runner 31 跳的差额来自这台机器**有**壳与宿主可跳的那些腿——两个方向都核过是具名跳过，不是失败。
+- **npm**：`+ dsh-dream-skin@10.14.0`，registry `time` 戳 **`2026-10-13T17:05:03.218Z`**；**`dist.shasum` `d539b4a879372f35319bf6cb11ade5aed55e5e04` 与本地 `npm pack` 那份逐位相同**（同一次 `npm pack` 产出的 `dsh-dream-skin-10.14.0.tgz`，416,421 字节、24 文件；发布用的就是这个 tarball 本身，不是重新打的一份），`dist.integrity sha512-tAg8eQBFXtjcY2…GTgsnsDr9ZQGg==` 与 dry-run 一致。**读侧延迟第七次实遇**：publish 回执已打出 `+ …@10.14.0`，而同一次读取里 `dist-tags.latest` 仍是 `10.13.1`、`time` 里没有 `10.14.0`、单版本 endpoint 404；约五分钟后三处才一致。判"发出去了没有"仍然只看 packument 的 `time`。
+- **从 registry 真装一次**（发布清单 B6）：一次性目录 `npm install dsh-dream-skin@10.14.0` ⇒ 装到 `10.14.0`、**24 文件**；本版承重的 `lib/index.js` **15,186 字节、与工作树逐字节相同**（sha256 前 16 位 `5642faa4f38c101e` 两侧一致），`lib/client.js` 442,975 字节同样逐字节相同，包内 `PLUGIN_BUILD = "10.14.0"`，宿主半边现读到 `STATE_SCHEMA_KEY = "dsh-dream-skin:schema-version"` / `STATE_SCHEMA_VERSION = "1"` 两枚常量都在场。
+- **GitHub Release**：<https://github.com/RevolutionLA/dsh-dream-skin/releases/tag/v10.14.0> 已出。
+- **本轮把 10.13.1 刚固化的那条动作真的用了一次**：`npm run host:preflight -- --profile-load` ⇒ `evaluator: the host's own evaluatePluginCompatibility()`（实装 `@deepseek-ai/dsh` `0.2.0-rc.1`）、`candidates 31 (publish stamps on 31) | in window 26 | dist-tags 0.2.0-rc.2 | newest by stamp: 0.2.1-alpha.2 — INSIDE the window`、profile 侧 `19 bundle layers loaded, 0 skipped / dsh-dream-skin: mounted` ⇒ **exit 0**。
+- **两个 profile 都没动**：web profile 是 `link:` 工作树（代码已新，但**正在跑的实例仍是旧半边**，要用户本人重启才会加载——见上面「未验证」）；桌面 profile 仍 `^10.12.1` / 实装 `10.12.1`（本版不改像素，没必要为它单独动一次，且 §8.4 那段"本机现状"读数已在发布前重读并对上）。
+
 
 ## [10.13.1] - 2026-10-13
 
