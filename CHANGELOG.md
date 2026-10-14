@@ -33,7 +33,13 @@
 
 ### 五、发布读数
 
-（发版后按 `git show --stat` 现读补齐。）
+- 代码一笔 `db44fc4`（8 文件：新门 `tests/package.runtime_size.test.cjs` +、`docs/publishing-to-npm.md` §十一、`docs/desktop-support.md` 头部与套件口径、CHANGELOG/README 本版块、`lib/client.js` 的 `PLUGIN_BUILD`、`package.json` / `package-lock.json`）。推 main 前先 `git fetch` 发现上游被 growth-chart bot 推进了一笔 ⇒ **`git pull --rebase` 保持线性**后推（没用 force）。tag **`v10.14.3`** peel 到 `db44fc4`，单 refspec 推成。
+- **CI run 38624624107 六作业全绿**：四份 `test`（Node 18 / 20 / 22 / 24）各 `# tests 528 / # pass 497 / # fail 0 / # skipped 31`；`typecheck` 绿；`Computed-style gate` 自报 `graded host[corner/fade/side/frost] desktop[desktop] coexist[coexist]`。**本机 CI 形态**（`DSH_HOST_ROOT=<空目录>`）528 / 501 pass / 27 skipped / 0 fail。
+- **npm**：`dist.shasum 62ec9aa4dd3ee5985a022559eceb7dcf31d2501` 与本地 `npm pack` 逐位相同（发布用的就是那个 tarball，429,746 字节 / 24 文件）；registry `time` 戳 `2026-10-14T19:35:43.001Z`——**读侧延迟第九次实遇**：publish 回执已出，其间 `dist-tags.latest` 仍是 `10.14.2`。
+- **从 registry 真装一次**（发布清单 B6）：装到 `10.14.3`、24 文件；本版新增内容全在 `docs/publishing-to-npm.md`（33,785 字节）——**安装物与工作树逐字节相同**，且从安装物里读到 §十一 在场、`262,144` 这个数与门名 `package.runtime_size.test.cjs` 都在；`lib/client.js` 442,975 / `lib/index.js` 15,186 / `docs/desktop-support.md` 167,760 / `README.md` 160,038 同样逐字节相同，包内 `PLUGIN_BUILD = "10.14.3"`。
+- **GitHub Release**：<https://github.com/RevolutionLA/dsh-dream-skin/releases/tag/v10.14.3>。
+- **给对方的答复**：<https://github.com/AI-Scarlett/DSH-Store/issues/1411#issuecomment-6176686104>（附 §一的复现路径与 §2 的测量命令，并指出其报告里"合计 467,678 超出 2,097,152"的自相矛盾、请其澄清命中了哪条边界）。**catalog 是否因此变绿未验证**——他们每八小时自动复检一次，下一次结果不由我方承诺。
+
 
 ## [10.14.2] - 2026-10-14
 
