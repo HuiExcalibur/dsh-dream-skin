@@ -312,7 +312,17 @@ dsh web   # 重启后恢复官方外观
 > **兼容机制**：插件把全部平台 seed 放在受控 `try` 内按候选顺序探测，宿主全部换代时降级为哑模块并打 `console.warn`，不会拖垮 DSH Web（issue #43 已根治）。`0.2.0-rc.1` 起宿主按 peer 范围在 boot 阶段**整包跳过**不兼容插件，peer 窗口即本插件的对外兼容窗口，由回归门强制与 manifest 一致。**但宿主闸门只认 `@deepseek-ai/dsh` 前缀的 peer**：`@deepseek-ai/cordis` 与 `react` **不参与**宿主兼容判定（由包管理器的 semver 解析单独把关）。判定细节与两把尺的对照表见 `tests/package.host_compat.test.cjs` 与 [docs/desktop-support.md](./docs/desktop-support.md)。
 
 <details>
-<summary><b>📜 逐版本更新记录（10.14.2 → 9.9.0，点开查看）</b></summary>
+<summary><b>📜 逐版本更新记录（10.14.3 → 9.9.0，点开查看）</b></summary>
+
+**版本 10.14.3（2026-10-14）**：**第三方目录的收录检查撞上宿主的加载形态——这一版记录的是"量清楚之后决定不改什么"。** DSH STORE 的固定 Commit 自动检查（[issue #1411](https://github.com/AI-Scarlett/DSH-Store/issues/1411)）把本插件标为 catalog blocked，四条原因里唯一有硬数字的是：`lib/client.js` **442,975 字节 > 其自动审核面的单文件上限 262,144**。回归门 **528/528**（10.14.2 为 524），质量审计 **229/229**（217 调色 + 12 工艺）。本版不改一个像素、不改任何用户可见行为。更新请写确切版本号：`dsh plugin --profile web add dsh-dream-skin@10.14.3`。
+
+**先量的两条决定性事实**：① **浏览器半边在 DSH 里必须是单文件**——活页 `performance.getEntriesByType('resource')` 读到宿主把 19 个插件的 client 拼成**一个** combo 请求 `/plugins/??…&dsh-dream-skin/client.js&rev=…`，而对包内同级路径的探测（`types/index.d.ts` / `index.js` / `locale/zh.json`）**全部 404** ⇒ "拆成几个 chunk"不是可选项；② **这条上限对生态普遍被超**——同一台机器上 8 个第三方插件的 `client.js` 都 > 262,144，最大 2,468,635 字节（约 9.4 倍）⇒ 这是"审核边界遇上宿主形态"，不是我方缺陷。
+
+**处置**：不把运行时入口 minify 或剥注释——那个文件同时是本项目"**可读的原生 token 源码、无注入**"承诺的审计面，仓库里几十道门读的就是它的文本；他们自己的契约也把混淆列为信号。改为**把增长变成看得见的决定**：新门 `tests/package.runtime_size.test.cjs` 给每个发货的 JS 运行时产物设一个**声明的天花板**（client 480 KiB / index 40 KiB），超了红；"新增一个发货 `.js` 却没设天花板"也红（第二运行时入口就藏在这儿）；另有一条断言钉住**天花板是余量、不是"已通过第三方上限"**——如果哪天它真掉到 262,144 以下，那条会红并要求删门说明。刻意**没有**把门写成"必须 < 262,144"：那在我方结构下是一盏永不绿的灯，而 10.8.1 那一轮刚为同一种灯写过撤回理由。全过程与判据写进 `docs/publishing-to-npm.md` §十一。
+
+**他们报告里唯一可修的那处我们不动**：`runtime artifact pattern requires review: ./locale/*.json` 指的是 `exports` 里那枚通配，而它是**承重的**——`tests/package.i18n.test.cjs` 记着删掉这个模式后宿主解析语言文件会抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`。没有"宿主到底会请求哪些语言码"的证据之前，保留通配、走他们的人工审阅：为消掉一条模式告警去动插件列表的多语言解析，等于拿用户看得见的功能换一次自动批准。
+
+**照实说**：我们的答复不承诺 catalog 变绿——如果他们的自动策略只认字节数，blocked 会保持；这一点连同"合计 467,678 字节 < 上限 2,097,152 却被写成 exceeds"的自相矛盾，都已在该 issue 里向对方指出并请澄清。另把一条容易混的事写清：活页 `build` 现在读到 `10.14.2`（浏览器半边每次加载从宿主取新 bundle），而**宿主半边**仍是进程启动时那一份——"界面已是新版"与"服务端半边已是新版"是两件事。
 
 **版本 10.14.2（2026-10-14）**：**同日重发，一次纯文档修正**——10.14.1 的包里有句话会把脚本使用者带错路，而那句话是**发出去的**（`docs/desktop-support.md` 在 npm `files` 白名单里），只能在下一个包里改对。回归门 **524/524**（用例数与上一版相同，本版只动文档与一条命令常量），质量审计 **229/229**（217 调色 + 12 工艺）。更新请写确切版本号：`dsh plugin --profile web add dsh-dream-skin@10.14.2`。
 
