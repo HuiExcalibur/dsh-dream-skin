@@ -312,7 +312,9 @@ dsh web   # 重启后恢复官方外观
 > **兼容机制**：插件把全部平台 seed 放在受控 `try` 内按候选顺序探测，宿主全部换代时降级为哑模块并打 `console.warn`，不会拖垮 DSH Web（issue #43 已根治）。`0.2.0-rc.1` 起宿主按 peer 范围在 boot 阶段**整包跳过**不兼容插件，peer 窗口即本插件的对外兼容窗口，由回归门强制与 manifest 一致。**但宿主闸门只认 `@deepseek-ai/dsh` 前缀的 peer**：`@deepseek-ai/cordis` 与 `react` **不参与**宿主兼容判定（由包管理器的 semver 解析单独把关）。判定细节与两把尺的对照表见 `tests/package.host_compat.test.cjs` 与 [docs/desktop-support.md](./docs/desktop-support.md)。
 
 <details>
-<summary><b>📜 逐版本更新记录（10.14.3 → 9.9.0，点开查看）</b></summary>
+<summary><b>📜 逐版本更新记录（10.15.0 → 9.9.0，点开查看）</b></summary>
+
+**版本 10.15.0（2026-10-15）**：**上一版说"`exports` 里那枚 `./locale/*.json` 通配是承重的、删了宿主会抛"——这一版去读了一遍，那句是推断不是读数。** 直接把宿主自己的 `readPluginMeta()` 调起来跑 **14 份 manifest + 11 枚文件名探测**（判定表落在 `tests/fixtures/plugin_meta_readings.json`，生成器 `scripts/gen-plugin-meta-readings.cjs`）：宿主**不猜语言码**，它 `readdir` 语言目录后把里面每个 `.json` 逐个解析，所以**通配从来不是坏的**（实测 `outcome: localized`）；真正会坏的是"新增一枚语言文件却忘了加导出"——那让宿主整个解析失败，**它不崩，我方插件列表那一行同时失去标题、描述与图标**（实测点名 `./locale/ja.json`）。于是改成显式枚举 `./locale/en.json` + `./locale/zh.json`，`tests/package.i18n.test.cjs` 3→6 换成双向门并**与那份实测逐格比对**（镜像算错任一形状即红，另含"通配与陈旧导出在宿主侧都不改变读数"两条对照腿）。过程中量到**第二条与 `exports` 无关的失效车道**：宿主先按 `LANGUAGE_ID` 校验文件名，`zh_CN.json` 这种名字即使导出齐全也让整行失去标题、描述与图标——11 枚候选名逐个实测（接受 `ab`/`abcdefgh`/`zh-CN`/`zh-Hans-CN`，拒绝 `a`/`abcdefghi`/`e2`/`zh_CN`），测试里那枚镜像正则由这张表约束而不是抄源码。**过程中同模型不同角色的对抗审查（`BLUE-10150`）又抓出一个真的 🔴**：旧那版门只看 `exports` 的**键名**，评审造出一份"枚举报满、但 `./locale/zh.json` 指向别处"的 manifest——**门 6/6 全绿，宿主把整行销毁**。现在要求**恒等映射**（`./locale/<x>.json` 必须指向 `./locale/<x>.json`），并补上四种坏目标形状的见证（不存在 / 指向别处 / `{require: …}` / `null`）、"每个 locale 条目必须是常规文件"，以及"图标与文本是两条契约"的对照腿。15 条变异腿（M1–M15）逐条实跑；评审那六条攻击在临时副本里重打：六条全红、控制全绿。回归门 **532/532**（10.14.3 为 528），质量审计 **229/229**（217 调色 + 12 工艺）。**本版不改一个像素，用户可见变化为零**（改动前后宿主返回同一份本地化文本）；10.14.3 写在 README、`docs/publishing-to-npm.md`、`docs/desktop-support.md` 与 CHANGELOG 里的那句因果已**就地标注作废**（原文保留），取证与自纠写在 `docs/publishing-to-npm.md` §十一。更新请写确切版本号：`dsh plugin --profile web add dsh-dream-skin@10.15.0`。
 
 **版本 10.14.3（2026-10-14）**：**第三方目录的收录检查撞上宿主的加载形态——这一版记录的是"量清楚之后决定不改什么"。** DSH STORE 的固定 Commit 自动检查（[issue #1411](https://github.com/AI-Scarlett/DSH-Store/issues/1411)）把本插件标为 catalog blocked，四条原因里唯一有硬数字的是：`lib/client.js` **442,975 字节 > 其自动审核面的单文件上限 262,144**。回归门 **528/528**（10.14.2 为 524），质量审计 **229/229**（217 调色 + 12 工艺）。本版不改一个像素、不改任何用户可见行为。更新请写确切版本号：`dsh plugin --profile web add dsh-dream-skin@10.14.3`。
 
@@ -320,7 +322,10 @@ dsh web   # 重启后恢复官方外观
 
 **处置**：不把运行时入口 minify 或剥注释——那个文件同时是本项目"**可读的原生 token 源码、无注入**"承诺的审计面，仓库里几十道门读的就是它的文本；他们自己的契约也把混淆列为信号。改为**把增长变成看得见的决定**：新门 `tests/package.runtime_size.test.cjs` 给每个发货的 JS 运行时产物设一个**声明的天花板**（client 480 KiB / index 40 KiB），超了红；"新增一个发货 `.js` 却没设天花板"也红（第二运行时入口就藏在这儿）；另有一条断言钉住**天花板是余量、不是"已通过第三方上限"**——如果哪天它真掉到 262,144 以下，那条会红并要求删门说明。刻意**没有**把门写成"必须 < 262,144"：那在我方结构下是一盏永不绿的灯，而 10.8.1 那一轮刚为同一种灯写过撤回理由。全过程与判据写进 `docs/publishing-to-npm.md` §十一。
 
-**他们报告里唯一可修的那处我们不动**：`runtime artifact pattern requires review: ./locale/*.json` 指的是 `exports` 里那枚通配，而它是**承重的**——`tests/package.i18n.test.cjs` 记着删掉这个模式后宿主解析语言文件会抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`。没有"宿主到底会请求哪些语言码"的证据之前，保留通配、走他们的人工审阅：为消掉一条模式告警去动插件列表的多语言解析，等于拿用户看得见的功能换一次自动批准。
+> 10.14.3 原话（逐字保留，由 10.15.0 作废）：
+> **他们报告里唯一可修的那处我们不动**：`runtime artifact pattern requires review: ./locale/*.json` 指的是 `exports` 里那枚通配，而它是**承重的**——`tests/package.i18n.test.cjs` 记着删掉这个模式后宿主解析语言文件会抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`。没有"宿主到底会请求哪些语言码"的证据之前，保留通配、走他们的人工审阅：为消掉一条模式告警去动插件列表的多语言解析，等于拿用户看得见的功能换一次自动批准。
+
+**他们报告里的通配那一处，10.14.3 说"不动"、10.15.0 动了**。`runtime artifact pattern requires review: ./locale/*.json` 指的是 `exports` 里那枚通配。10.14.3 当时的理由是"它承重——删掉宿主解析语言文件会抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`"，**那句是推断而不是读数**：直接调用宿主自己的 `readPluginMeta()` 实测（判定表落在 `tests/fixtures/plugin_meta_readings.json`）得到的是——宿主不猜语言码，它 `readdir` 那枚 `locale/` 目录、把里面每个 `.json` 逐个解析，所以**显式枚举覆盖的就是它将要请求的全部文件**；通配本身在宿主侧照旧解析成功，从来不是坏的。真正会坏的是"新增一枚语言文件却忘了加导出"：那枚文件让 `readPluginMeta` 整个失败，**宿主不崩，我方插件列表那一行同时失去标题、描述与图标**（而 English 单独缺导出时更安静——不抛错，只退回 manifest 文本）。所以现在改成显式 `./locale/en.json` + `./locale/zh.json`，并把 `tests/package.i18n.test.cjs` 换成双向门（在场↔导出两个方向、通配本身也点名）**且与那份宿主实测逐格比对**。判据与取证过程写在 `docs/publishing-to-npm.md` §十一。
 
 **照实说**：我们的答复不承诺 catalog 变绿——如果他们的自动策略只认字节数，blocked 会保持；这一点连同"合计 467,678 字节 < 上限 2,097,152 却被写成 exceeds"的自相矛盾，都已在该 issue 里向对方指出并请澄清。另把一条容易混的事写清：活页 `build` 现在读到 `10.14.2`（浏览器半边每次加载从宿主取新 bundle），而**宿主半边**仍是进程启动时那一份——"界面已是新版"与"服务端半边已是新版"是两件事。
 

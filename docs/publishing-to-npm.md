@@ -396,6 +396,24 @@ DSH STORE（`AI-Scarlett/DSH-Store`）对固定 Commit 做自动收录检查，�
 
 - **不把运行时入口压小去迁就审核器的字节预算**——不 minify、不删注释、不剥符号。这个文件同时是本项目的**审计面**（对外承诺是"可读的原生 token 源码、无注入"），仓库里几十道门读的就是它的文本，而他们的契约本身也把"混淆"列为信号。为了字节数牺牲这些，是拿用户的可核验性换一次自动批准。
 - **把增长变成看得见的决定**：`tests/package.runtime_size.test.cjs` 给每个发货的 JS 运行时产物设一个**声明的天花板**（`lib/client.js` 480 KiB、`lib/index.js` 40 KiB），超了红；并且要求"新多出来一个发货的 .js 却没设天花板"也红（这是"第二运行时入口"藏身的地方）。第三方上限写在门里作为**事实**而不是我方判据——**不要**把门写成"必须 < 262,144"，那是一盏在我方结构下永不绿的灯（#98 那一轮刚为同一种灯写过撤回理由）。
-- **能修的只有通配那一处，但它有前置**：他们的报告还点了 `runtime artifact pattern requires review: ./locale/*.json`。这一枚通配**是承重的**——`tests/package.i18n.test.cjs` 记着"删掉 `./locale/*.json` 这个 exports 模式，宿主会抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`"（宿主按自己的语言码去解析子路径）。所以要么保留通配并走他们的人工审阅，要么先拿到宿主究竟会请求哪些语言码的证据再枚举。**别为了消掉一条模式告警去动插件列表的多语言解析**。
+  10.14.3 的原文（逐字保留）：
+
+  > - **能修的只有通配那一处，但它有前置**：他们的报告还点了 `runtime artifact pattern requires review: ./locale/*.json`。这一枚通配**是承重的**——`tests/package.i18n.test.cjs` 记着"删掉 `./locale/*.json` 这个 exports 模式，宿主会抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`"（宿主按自己的语言码去解析子路径）。所以要么保留通配并走他们的人工审阅，要么先拿到宿主究竟会请求哪些语言码的证据再枚举。**别为了消掉一条模式告警去动插件列表的多语言解析**。
+
+- **通配那一处：10.14.3 说"不动"，10.15.0 动了，因为它当时的那条理由是未经实测的推断**。报告还点了 `runtime artifact pattern requires review: ./locale/*.json`。10.14.3 的原文是"这一枚通配**是承重的**——删掉它宿主会抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`，所以要么保留并走人工审阅，要么先拿到宿主究竟会请求哪些语言码的证据再枚举"。**那句"承重"是推断，不是读数**，而它要的那个证据现在拿到了：直接调用宿主自己的 `readPluginMeta()`（`@deepseek-ai/dsh-app-boot`，装在 `@deepseek-ai/dsh@0.2.0-rc.1` 里）对 **14 份 staged manifest + 11 枚文件名探测**跑出实测判定，落在 `tests/fixtures/plugin_meta_readings.json`，由 `scripts/gen-plugin-meta-readings.cjs` 生成：
+  - 宿主**不猜语言码**——它 `readdir` 那枚 `locale/` 目录，把里面**每一个** `.json` 逐个解析。所以"显式枚举"覆盖得到它将要请求的全部文件，通配在这里没有多做任何事。
+  - `locale/en.json` 走的是 `optionalResourcePath`：English 不在场**或没被导出**时宿主不抛，只是整行退回 manifest 的 `name`/`description`（实测 `outcome: manifest-fallback`）。
+  - English 解析成功之后，其余语言文件走**会抛**的 `resolvePluginResource`：一枚在场却没被导出的文件 ⇒ `ERR_PACKAGE_PATH_NOT_EXPORTED` 被 `readPluginMeta` 接住变成 `{ error: … }`，**宿主不坏，我方这一行同时失去标题、描述与图标**（实测 `outcome: error`，`errorSubpath: "./locale/ja.json"`）。
+  - **文件名也是一条独立车道**（本轮实测发现的）：`dictionariesOf()` 在解析之前先 `LANGUAGE_ID.test(stem)`。11 枚候选名逐个交给宿主跑的结论是**接受** `ab` / `abcdefgh` / `zh-CN` / `zh-CNA` / `zh-Hans-CN` / `en-US`、**拒绝** `a` / `abcdefghi`（9 个字母）/ `e2`（主码里带数字）/ `zh-CCCCCCCCC`（子码 9 个字符）/ `zh_CN`（下划线）。被拒的名字**即使导出齐全**也让 `readPluginMeta` 整个失败 ⇒ 那一行失去标题、描述与图标。所以新增语言时**两件事都要对**：文件名合法 **且** 显式导出。
+  - **优先级也量过**：一枚被拒的文件名 + English 没导出 ⇒ `manifest-fallback`（不抛），因为 English 是进入目录循环的那道门。
+  - **测不到的一支**：`duplicates locale` 需要两枚只差大小写的文件名在同一目录共存，Windows 造不出这个夹具——这一支既没被见证也没被建模，别把它算进"已覆盖"。
+  - **键在场而目标坏掉，是本轮蓝军抓出来的 🔴（`BLUE-10150` BL-01）**：`exports` 的解析是**按子路径**发生的，所以一枚看起来"枚举齐全"的 manifest 可以有四种各自会抛的值——目标不存在 ⇒ `ERR_MODULE_NOT_FOUND`、目标在别的目录 ⇒ "must share the English locale directory"、值写成 `{require: …}` 或 `null` ⇒ `ERR_PACKAGE_PATH_NOT_EXPORTED`。旧那版门只读**键名**，对这四种形态全绿，而宿主把整行销毁。现在的不变式因此是**恒等映射**：`./locale/<x>.json` 必须指向 `./locale/<x>.json`，且每个 locale 条目必须是**常规文件**（目录名伪装已实测会抛）。这比宿主本身更严——严的理由是可审性加"坏法只有这几种"的实测清单，不是洁癖。
+  - **图标与文本是两条契约**：删掉 `./package.json` 那枚导出，标题与描述照常、图标静默消失（实测 `outcome: localized` + `hasIcon: false`）。门里两条分开断言，并有一条对照腿钉住"掉 `./package.json` **不**改变文本判定"。
+  - **仍未建模的一支（洞，不是覆盖）**：一枚**逃逸到包外的符号链接**会让宿主报 "must share the English locale directory"，我方现在既不见证也不断言——要补它，先在生成器里把这个夹具造出来并让它跑红。
+  - **`optionalResourcePath` 的"可选"只覆盖缺失，不覆盖坏**：English 不在场 / 没被导出 / 目标不存在 ⇒ 静默退回 manifest 文本；English 那一枚是**目录**时走会抛那一支，文本与图标一起没（实测 `ERR_UNSUPPORTED_DIR_IMPORT`）。
+  - 通配本身：宿主照旧解析成功（实测 `outcome: localized`）——**所以 10.14.3 那句"删掉会抛"是错的**，它把"某一枚文件没被覆盖"的后果写成了"通配消失"的后果。
+  - **维护动作**：动过 `locale/` 目录或 `exports` 之后，在**装有宿主的机器上**重跑 `node scripts/gen-plugin-meta-readings.cjs`。它没找到宿主时 `exit 2` 并说明"我方自己的镜像不算见证"，跑不出两种失败形状时**拒绝写表**——这两个出口是刻意的：一张由推断生成、或全绿的见证表，比没有表更坏。CI 不跑它（CI 上没宿主），CI 读的是提交进仓库的那份。
+  改成显式枚举的真实代价是：不变式从"通配自动兜住"变成"有人记得"，所以同轮把 `tests/package.i18n.test.cjs` 换成双向门（在场↔导出两个方向都查、通配本身也点名），并让它**与那份宿主实测逐格比对**——镜像算错任何一个形状都会红在"mirror predicts X but the host returned Y"上。同时留了两条对照腿：通配与"导出指向不存在的文件"在宿主侧都**不**改变读数，所以那两条只由策略腿红，别把两件事混成一句。
+- **给下一轮的一条自纠**：写下"某处是承重的、所以不动"时，先问这句是从哪儿知道的。这里的答案本来只要一次 `import()` 宿主模块就能读到，而我用了推断去保护一个功能，还把推断写进了发货文档。**"未经实测的前提"一旦进了文档就会变成下一轮的理由**，这条比上面那枚通配本身贵。
 - 复检是他们每八小时自动跑，不需要我方回复"确认"；但要澄清哪一条上限真的命中了（他们的报告把"合计 467,678 字节 / 上限 2,097,152"写成"exceeds"，而 467,678 小于上限——见 issue 内的回复）。
 

@@ -76,6 +76,19 @@ test('icon: ships in the tarball', () => {
 	assert.ok(owned, `${icon} must be listed in package.json "files" or it never reaches the installed plugin`);
 });
 
+test('icon: the manifest stays reachable, because the host reads icon through it', () => {
+	// Measured (`tests/fixtures/plugin_meta_readings.json`, case
+	// `package-json-export-removed`): dropping the `./package.json` export leaves
+	// the localised title and description completely intact and silently removes
+	// the icon — the text and the icon are two contracts on two different
+	// subpaths, so nothing else in here would notice.
+	assert.equal(
+		pkg.exports && pkg.exports['./package.json'],
+		'./package.json',
+		'readPluginMeta() resolves the manifest through "./package.json"; without that entry the plugin-list row loses its icon and keeps its text'
+	);
+});
+
 test('icon: an SVG is self-contained (a data URL cannot fetch external resources)', () => {
 	if (path.extname(icon).toLowerCase() !== '.svg') return;
 	const source = fs.readFileSync(iconPath, 'utf8');
