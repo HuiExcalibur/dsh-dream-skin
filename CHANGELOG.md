@@ -16,7 +16,7 @@
 
 ### 二、改了什么
 
-- **浏览器半边不再有"值"进入 `require`**（`requireSeed()`）：`requireSeed(name)` 改成 `requireSeed(load)`，helper 只接受零参 thunk，四枚平台 seed 的说明符全部写成**调用点上的字符串字面量**；原先那条 `for (const seed of [...])` 换成两条字面量语句——那个循环变量本身就是那条"值入参"车道。**行为逐处不变**：探测顺序仍是 jsx-runtime → react → master store → 稳定版 client，`null` 判据与 `seedProbe.lastError` 的覆盖次序一字未动，所以 issue #41 / #43 那三条双代 seed 用例在本版**不改一字仍然绿**。改的是"能不能被审计"，不是"能不能加载"。
+- **浏览器半边不再有"值"进入 `require`**（`requireSeed()`）：`requireSeed(name)` 改成 `requireSeed(load)`，helper 只接受零参 thunk，四枚平台 seed 的说明符全部写成**调用点上的字符串字面量**；原先那条 `for (const seed of [...])` 换成两条字面量语句——那个循环变量本身就是那条"值入参"车道。**行为逐处不变**：探测顺序仍是 jsx-runtime → react → master store → 稳定版 client，`null` 判据与 `seedProbe.lastError` 的覆盖次序一字未动，所以 `tests/client.smoke.test.cjs` 里那三条 seed 用例（#43 稳定版回退、无 seed 降级哑模块、缺 REACT 也降级）在本版**一行未改且仍绿**。改的是"能不能被审计"，不是"能不能加载"。
 - **可审计能力面进文档**（`docs/desktop-support.md` 新增「可审计能力面：浏览器半边能向宿主开口的一切」）：那张表就是"插件能向宿主开口的一切"的完整清单，且**不是手抄**——由新门与调用点双向核对。同节把另外两面定死：`fetch` 的调用点只接受常量 `HOST_API`，其值是**只有路径、没有协议与主机**的 `new URL("dream-skin/api", document.baseURI).pathname`；读写 `$DSH_HOME/dream-skin.json` 全部发生在宿主半边 `lib/index.js`。第三方图片目标（必应每日壁纸）是一枚**存下来的 URL**、由浏览器作为壁纸加载而非 `fetch`，默认关闭。
 
 ### 三、门与账本
@@ -45,7 +45,7 @@
 | **C1** 文档表多写一行代码并不要求的 seed | L3 L5 | 承诺与代码不一致，两种读法各抓一半 |
 | **C2** 文档表调换探测顺序 | L3 L5 | 顺序是行为（master seed 在前），故 L5 也红 |
 | **D1** 去掉 `@deepseek-ai/dsh-client-store` 的 `peerDependencies` 声明 | **只 L4** | 清单与代码分叉的唯一哨兵 |
-| **E1** `HOST_API` 由 `.pathname` 改成 `.href`（带 origin 的绝对 URL） | L6 L7 | **其余 341 例全绿**——目的地这件事在本版之前没有任何用例看守，这两条腿是本轮新加的，不是"一直都有" |
+| **E1** `HOST_API` 由 `.pathname` 改成 `.href`（带 origin 的绝对 URL） | L6 L7 | ****其余 187 例全绿**（`client.smoke` 139 / `client.persistence` 25 / `client.storage` 16 / `client.fiber` 7，本机现数）——目的地这件事在本版之前没有任何用例看守，这两条腿是本轮新加的，不是"一直都有" |
 | **G1** 把一处 `require(userInput)` 藏在与代码同行的注释后面 | L1 L3 L4 L5 L7 | 门自己的第一轮实现会**漏掉这一整行**（当时的过滤规则按行首丢弃）；改成"剥掉注释段、保留其后的代码"后转红——这条是蓝军复核抓出来的，我方原来的写法确有该盲区 |
 | **G2** `fetch(HOST_API` 换成 `fetch(whichApi` | L6 L7 | L6 是唯一能在"该分支没被跑到"时仍然发现的腿；另有 13 例因运行期引用未定义而红，属附带 |
 | **G3** URL spec 前面加一个斜杠（rooted，`.pathname` 仍成立） | L6 L7 | 运行时"没有 scheme"这件事**不足以**区分——spec 形状与 `API_PREFIX` 核对才区分得开 |
@@ -68,6 +68,15 @@
 - L7 观察的是**合成沙箱里**实际发起的 URL（两种页面形态各自采样），真机 Chromium 下 `<base>` 标签改写 baseURI 时的完整链路未经 DSH 实测——可承诺的是"目的地不含协议与主机"，不是"路径一定等于 `/dream-skin/api`"。
 - **能力矩阵的词汇表由人列**（L8 逐 token 现扫，token 名单在测试与文档两处、由门强制两边一致）。它能保证"列出的都核过、代码里冒出来的已列 token 一定被抓"，**不能**保证"某天出现一枚我们没想到要列进来的新 Web API"也会被抓——那需要有人先把名字加进词汇表。这条边界同样写在 `docs/desktop-support.md`。
 - L8/L1/L6 是**文本级**检测（读 `lib/client.js` 的字节），不是运行时沙箱证明：它能发现"代码里出现了这串字符"，发现不了"通过计算得到的 API 名"（例如 `window[key]`）。我方没有那种写法，但这句话只能说"没有"，不能说"门证明了没有"。
+
+### 六、发布读数（10.16.0）
+
+- **CI**：run `38855474772`（提交 `f8cc070`）六作业 conclusion 全 success。`test (18)` / `test (20)` / `test (22)` 三份各打印 `# tests 541 / # pass 510 / # fail 0 / # skipped 31`（那 31 条是"没有宿主就不跑"的宿主侧用例），`test (24)` 同一组数、用的是 `ℹ` 形；`typecheck`（`typescript@5.6.3`）与 computed-style 真引擎门全绿。
+- **npm**：`npm publish` 回执 `+ dsh-dream-skin@10.16.0`，`shasum a059b32b57f9217aa5260a2d63fe97a0fa2dc297`，与本机 `npm pack` 出来的那一个**逐位相同**。公共 packument 现读：`dist-tags.latest = 10.16.0`、`time["10.16.0"] = 2026-10-16T05:28:05.112Z`、`fileCount 25`、`unpackedSize 1,185,730`。**读侧延迟第十次实遇**：发布回执刚出来时按版本号查 `npm view dsh-dream-skin@10.16.0` 回的是 `E404 No match found for version 10.16.0`（与"版本号打错"完全同形），几分钟后 packument 的 `time` 条目已到位——判"发出去了没有"仍然只看 `time`，不看第一次读。
+- **临时 profile 真装一次**（`docs/publishing-to-npm.md` §8.2 那条路，一次性目录 + `--config.minimumReleaseAge=0`，因为本就在 24 小时窗口内）：三个读数 `package.json` 的 `version = 10.16.0` / `lib/client.js` 里 `PLUGIN_BUILD = "10.16.0"` / 安装物 **25 个文件**；`lib/client.js` 的 sha1 与工作树**逐位相同**；`docs/evidence/dsh-store-1411-followup-2026-10-15.md` **确实在安装物里**——`files` 白名单那条 L9 门防的就是"引用随文档发出去、被引用的原文没发"。
+- **tag 与 release**：`v10.16.0` 是指向 `f8cc070` 的 annotated tag object（`463f74767db9fa8dcfeb654ebb82b216f584f924`）。**这次不是用 git 推的**：本机那一刻 `github.com:443` 直连与 7890 代理都连不上（`curl` 两种路径都失败），而 `api.github.com` 可达，所以 tag 对象与 `refs/tags/v10.16.0` 走 REST 建，随后**删除了本地那个同名 tag**以免两个 tag 对象分叉（下一次 `git fetch --tags` 会拿到远端那份）。Release：<https://github.com/RevolutionLA/dsh-dream-skin/releases/tag/v10.16.0>。
+- **发出去的文档里有一条算错的数，记在这里而不是悄悄改**：10.16.0 的 `README.md`（随 npm 包分发）写"其余 **341** 例全绿"，那是我算错的——本机现数是 **187**（`client.smoke` 139 / `client.persistence` 25 / `client.storage` 16 / `client.fiber` 7）。仓库里的 README、CHANGELOG、`docs/desktop-support.md` 与 GitHub release 正文都已按 187 更正（release 正文是发布之后 `gh release edit` 重发的，已核过正文里只有 187）；npm 包不可覆盖，那条错数会跟着 10.16.0 的安装物留在 registry，由下一版带走。**给目录方的答复用的是改后的数**，且答复发出去时公开物里仍留着旧的那一条——这个先后顺序本身就是"发出去的文档 ≠ 仓库里的文档"的现例。
+- **本地全量重跑的一次红**：文档改完后 `node --test tests/*.test.cjs` 出现 1 例红，是 `client.persistence.test.cjs` 里那条 4.5 秒定时器用例（`post-release review: hung host probe releases the gate…`）；该文件单跑两次都是 25/25 绿，之后全量重跑一次也是 **541/541**。按本仓库既有的"全量并行时定时器类用例受邻居干扰"边界记账——这一例没有翻成对外结论，CI 四矩阵与两次全量重跑都是绿的。
 
 ## [10.15.0] - 2026-10-15
 
