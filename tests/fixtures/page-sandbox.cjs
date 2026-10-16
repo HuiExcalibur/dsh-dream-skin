@@ -149,7 +149,7 @@ function buildSandbox({ failWrite = null, seed = {}, code = null, storeMissing =
 		},
 		removeItem: (k) => store.delete(k)
 	};
-	const sent = { sets: [] };
+	const sent = { sets: [], urls: [] };
 	// Page-scope residue the fiber cases have to see: every MutationObserver the bundle
 	// constructs (with whether it is still observing) and every interval it leaves running. Both
 	// are module-scope handles in the bundle, so "which generation is still watching the DOM" is
@@ -187,6 +187,10 @@ function buildSandbox({ failWrite = null, seed = {}, code = null, storeMissing =
 		clearInterval(id);
 	};
 	const fetchMock = async (url, init) => {
+		// The destination is recorded, not just the payload: `tests/client.audit_surface.test.cjs`
+		// asks "which URL can this bundle even reach", and that is unfalsifiable if the URL is
+		// dropped on the floor here.
+		sent.urls.push(url);
 		const bodyObj = JSON.parse(init.body);
 		if (bodyObj.method === 'get') return { ok: true, status: 200, json: async () => ({ ok: true, value: {} }) };
 		if (bodyObj.method === 'set') {

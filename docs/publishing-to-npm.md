@@ -385,6 +385,8 @@ npm run host:preflight -- --packument tests/fixtures/host_packument_sample.json
 
 DSH STORE（`AI-Scarlett/DSH-Store`）对固定 Commit 做自动收录检查，其契约（`registry/README.md`）写着自动审核面的硬上限：**最多 240 个运行时文件、单文件 262,144 字节（256 KiB）、合计 2,097,152 字节（2 MiB）**，超限**失败关闭**并附带报"扫描面不完整"。我方 `lib/client.js` 是 442,975 字节 ⇒ 撞单文件上限，catalog 被标 blocked（2026-10-14 issue #1411）。
 
+> **【10.16.0 就地更正：上面这段的前提已被对方收回，原文保留不删】** 复核方在 2026-10-15 的追评（`AI-Scarlett/DSH-Store#1411`，原文与正文 sha256 存档在 `docs/evidence/dsh-store-1411-followup-2026-10-15.md`）里明确"the old report conflated a per-file limit with the total… That diagnostic was incorrect"，并把边界改为 **4 MiB/文件、8 MiB/总量、512 源文件**；在新边界下他们写下"**Your 442,975-byte client needs no minification or splitting**"。也就是说本节 2026-10-14 那两条实测（① 宿主 combo 加载决定了浏览器半边必须单文件；② 同一台机器上 8 个同行插件同样超那个数）**仍然成立且有价值**，但它们所回应的那条**检查本身是错的**——我方当时拒绝"为了字节数牺牲审计面"的处置，事后看方向也对。catalog 当时仍 blocked，阻塞点换成了另一件事（`requireSeed()` 里 `require(name)` 的"有限调用集不可证"），由 10.16.0 处理：见 `docs/desktop-support.md` 的「可审计能力面」一节。本节其余内容作为"外部判据逼你改形状时先量这形状是谁定的"的方法记录保留。
+
 **先量再决定改什么，两件事都是实测（2026-10-14，本机活页）：**
 
 1. **浏览器半边必须是单文件，这是宿主加载器决定的**：宿主把全部插件的 client 拼成一个 combo 请求送进浏览器——
