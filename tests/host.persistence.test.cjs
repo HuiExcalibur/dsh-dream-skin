@@ -43,19 +43,53 @@ function makeRes() {
 	};
 }
 
-/** Build a ctx that captures the registered route handler. */
+/**
+ * Build a ctx that captures the registered route handler.
+ *
+ * The ctx is a Proxy, not a plain object, because the host's cordis enforces
+ * dependency injection on PROPERTY access: a service named in `inject` is
+ * readable as `ctx.webServer`, but any other service read as a property throws
+ * `cannot get property "…" without inject` — only `ctx.get(name)` may read an
+ * optional service. The first version of the issue #109 fix used
+ * `ctx.webStartup` and stayed green here because a plain object has no such
+ * rule; on the real host it threw per request while the plugin looked mounted.
+ * This harness now reproduces the rule, so a property read of `webStartup` /
+ * `webRuntime` reddens the file instead of shipping.
+ *
+ * Service availability per host generation (absent ones are NOT on the ctx):
+ *   - `webStartup` — DSH ≥ 0.2.1;
+ *   - `webRuntime` — DSH ≤ 0.2.0 (the default here, so pre-existing cases
+ *     keep their meaning);
+ *   - neither — the host half must still mount with a loopback-only fence.
+ */
 function makeHarness(overrides = {}) {
 	let captured = null;
-	const webStartup = overrides.webStartup !== undefined ? overrides.webStartup : undefined;
-	const webRuntime = overrides.webRuntime !== undefined ? overrides.webRuntime : { trustedHosts: overrides.trustedHosts || [] };
-	const ctx = {
-		webStartup,
-		webRuntime,
-		webServer: { register(route) { captured = route; return () => {}; } },
-		effect(fn) { fn(); }
+	const has = (k) => Object.prototype.hasOwnProperty.call(overrides, k);
+	const services = {
+		webServer: { register(route) { captured = route; return () => {}; } }
 	};
+	if (has('webStartup') && overrides.webStartup != null) services.webStartup = overrides.webStartup;
+	if (has('webRuntime')) {
+		if (overrides.webRuntime != null) services.webRuntime = overrides.webRuntime;
+	} else {
+		services.webRuntime = { trustedHosts: overrides.trustedHosts || [] };
+	}
+	const INJECTED = ['webServer'];
+	const base = {
+		effect(fn) { fn(); },
+		get(name) { return services[name]; }
+	};
+	const ctx = new Proxy(base, {
+		get(target, prop) {
+			if (typeof prop === 'symbol' || prop === 'then') return undefined;
+			if (prop in target) return target[prop];
+			if (INJECTED.includes(prop)) return services[prop];
+			throw new Error(`cannot get property "${prop}" without inject`);
+		}
+	});
 	return {
 		ctx,
+		services,
 		async run(reqOpts) {
 			assert.ok(captured && captured.handler, 'handler not registered');
 			const req = makeReq(reqOpts);
