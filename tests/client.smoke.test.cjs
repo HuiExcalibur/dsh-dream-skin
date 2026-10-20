@@ -302,7 +302,13 @@ function covers(selectorList, el) {
 function makeEl() {
 	const el = {
 		style: {}, dataset: {}, children: [], parentElement: null,
-		setAttribute() {}, removeAttribute() {},
+		// Attributes are RECORDED, not swallowed: the low-power switch (issue #110)
+		// is published only through setAttribute/removeAttribute, and a mock that
+		// no-ops them would let the feature be deleted without a single red case.
+		attrs: {},
+		setAttribute(k, v) { this.attrs[k] = String(v); },
+		getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
+		removeAttribute(k) { delete this.attrs[k]; },
 		// Real DOM insertion semantics: a node cannot occupy two slots, so re-appending an
 		// existing child MOVES it. The material sheet's "last in <head>" gate (B9) is only
 		// observable under this rule — with a naive push the mock would show two copies of one
@@ -342,7 +348,11 @@ function makeEl() {
 
 function buildSandbox(overrides = {}) {
 	const body = makeEl();
-	const document = { body, createElement: () => makeEl(), createTextNode: () => ({}), querySelector: () => null, querySelectorAll: () => [], head: makeEl() };
+	// Real documents have a documentElement; the low-power switch (issue #110)
+	// publishes its attribute there, so a mock without one silently skips the
+	// whole code path and would keep the assertion green on a broken feature.
+	const documentElement = makeEl();
+	const document = { body, documentElement, createElement: () => makeEl(), createTextNode: () => ({}), querySelector: () => null, querySelectorAll: () => [], head: makeEl() };
 	const store = new Map();
 	// seed localStorage from overrides.seed
 	if (overrides.seed) for (const [k, v] of Object.entries(overrides.seed)) store.set(k, String(v));
@@ -5789,6 +5799,71 @@ test('issue #61 (blur fill): the bleed layer paints BEHIND the image and detache
 
 	adv.clearAll();
 	assert.equal(g.bleeds().length, 0, 'clearing the wallpaper tears the bleed layer down too');
+});
+
+test('issue #110: low-power mode drops backdrop-filter, the wallpaper blur and the bleed layer', () => {
+	// The bundle ships no CSS animations, so the measured GPU cost is compositing
+	// large blurred surfaces (#110: >50% idle on an M4 with two windows open).
+	// This switch is the opt-in escape hatch; the default look must not move.
+	const SEED = {
+		'dsh-dream-skin:wallpaper': 'data:image/png;base64,AAAA',
+		'dsh-dream-skin:wallpaper-blur': '7',
+		'dsh-dream-skin:wallpaper-fit': 'blur'
+	};
+	const painted = (h) => h.document.body.children.filter(
+		(el) => typeof el.style.backgroundImage === 'string' && el.style.backgroundImage !== ''
+	);
+	const start = (extra) => {
+		const h = buildSandbox({ seed: { ...SEED, ...extra } });
+		const e = h.factory(makeRequire(makeRuntime().RT));
+		e.apply(makeApplyContext(h, { captureActions: true }));
+		return h;
+	};
+
+	// Control: the shipped default is OFF, with both blurred layers present.
+	const off = start({});
+	assert.equal(off.document.documentElement.getAttribute('data-dsh-dream-skin-performance'), null,
+		'off by default: no root attribute');
+	const controlLayers = painted(off);
+	assert.equal(controlLayers.length, 2, 'default blur fit keeps the bleed layer + the image');
+	const controlBleed = controlLayers.find((el) => String(el.style.cssText).includes('scale(1.2)'));
+	assert.ok(controlBleed, 'the bleed layer is the overscaled one');
+	assert.equal(controlBleed.style.filter, 'blur(55px)', 'control: bleed keeps blur + 48');
+	assert.equal(controlLayers.find((el) => el !== controlBleed).style.filter, 'blur(7px)',
+		'control: the image keeps the user blur');
+
+	// Stored ON at boot.
+	const on = start({ 'dsh-dream-skin:performance': '1' });
+	assert.equal(on.document.documentElement.getAttribute('data-dsh-dream-skin-performance'), '1',
+		'the stored switch publishes the root attribute before the first wallpaper render');
+	const lowLayers = painted(on);
+	assert.equal(lowLayers.length, 1, 'low-power drops the bleed layer (its whole purpose is a blurred halo)');
+	assert.equal(lowLayers[0].style.filter, 'none', 'the wallpaper image is not blurred');
+
+	// The CSS half: the shipped material sheet must carry the selector that
+	// clears backdrop-filter for everything under the attribute.
+	const sheet = on.document.head.children.find((el) => el && el.id === 'dsh-dream-skin:material:liquid-glass');
+	assert.ok(sheet, 'the material sheet is installed');
+	const css = String(sheet.textContent || '');
+	assert.ok(css.includes('html[data-dsh-dream-skin-performance] *'),
+		'the override selector is in the material sheet');
+	assert.ok(css.includes('backdrop-filter: none !important'),
+		'and it actually clears backdrop-filter');
+
+	// Toggling through the settings action flips both halves without a restart.
+	const glass = off.actionBags['dream-skin-glass'];
+	glass.setPerformance(true);
+	assert.equal(off.document.documentElement.getAttribute('data-dsh-dream-skin-performance'), '1');
+	assert.equal(off.localStorage.getItem('dsh-dream-skin:performance'), '1');
+	assert.equal(painted(off).length, 1, 'the bleed layer is detached on the toggle');
+	assert.equal(painted(off)[0].style.filter, 'none', 'and the image is flat immediately');
+	glass.setPerformance(false);
+	assert.equal(off.document.documentElement.getAttribute('data-dsh-dream-skin-performance'), null);
+	assert.equal(off.localStorage.getItem('dsh-dream-skin:performance'), '0');
+	const restored = painted(off);
+	assert.equal(restored.length, 2, 'turning it off restores the bleed layer');
+	assert.equal(restored.find((el) => el.style.filter === 'blur(7px)') !== undefined, true,
+		'and the user blur comes back');
 });
 
 test('issue #61 (fill mode): a gradient ignores it, and both gates whitelist the value', () => {
