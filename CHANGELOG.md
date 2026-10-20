@@ -2,6 +2,29 @@
 
 记录 `dsh-dream-skin` 的可观变更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。从 `8.28.0` 起，版本号启用**日期式规则**：`M.D.X`（月.日.当日第几个版本），例如 8 月 28 日首个版本 `8.28.0`，当日再发 `8.28.1`，次日则为 `8.29.0`，以取代旧的 `0.4.x` 语义化版本（日期按维护者本地时区 UTC+8 计）。
 
+## [10.20.0] - 2026-10-20
+
+> **DSH 0.2.1-rc.2 移除 `webRuntime` 服务导致宿主半边永久 pending，本版把它变成运行时降级链。** 合计 **229 项质量门全过**（217 调色 + 12 工艺，两池都不碰），全套 `npm test` 532→**545 全绿**。
+
+### 一、问题与根因
+
+DSH Desktop 自 `0.2.1-rc.2` 起移除了 `webRuntime` 服务，把信任主机列表迁移到 `webStartup.trustedHosts`。插件的 `lib/index.js` 硬依赖该服务（`export const inject = ["webServer", "webRuntime"]`），导致在 0.2.1+ 上入口永远等不到 `webRuntime`，`apply()` 不执行，`/dream-skin/api` 不挂载，设置无法跨重启持久化（issue #109）。
+
+### 二、改了什么
+
+- **`inject` 只依赖 `webServer`**：信任列表改为运行时动态获取，优先 `webStartup.trustedHosts`（DSH ≥ 0.2.1），回退 `webRuntime.trustedHosts`（DSH ≤ 0.2.0），两者皆无时返回空数组——环回地址仍由 `isTrustedApiRequest()` 的 `isLoopbackHostname` 守卫保护，配置授权纯属可选。行为逐处不变：探测顺序、null 判据、错误覆盖次序一字未动。
+- **新增 4 条测试用例**（`tests/host.persistence.test.cjs`）：验证 `trustedAuthorities()` 的降级链——优先 webStartup、回退 webRuntime、两者皆无时空数组但环回仍通、null 服务容错。每条用例开头补一句"模块必须导出这个键"才转红（防空对空假绿，见 10.13.0 教训）。
+
+### 三、门与账本
+
+- **回归门 545/545**（上一版 10.16.0 为 532），**质量审计 229/229**（217 调色 + 12 工艺，两池都不碰）：净 **+13**，其中 4 条为新文件 `tests/host.persistence.test.cjs` 的 `trustedAuthorities` 降级链用例，其余 9 条来自之前版本累积（10.16.0 的 L1-L9 审计面门）。`docs/desktop-support.md`：兼容表与"已自动化验证"清单的套件读数 532→545。`README.md`：本版新闻条目。`package.json` / `package-lock.json`：版本置为 10.20.0。
+
+### 四、诚实边界
+
+- **桌面 profile 仍 `^10.12.1`**（有意落后，见记忆库 `project-host-env-020rc1.md`）。
+- **判"发出去了没有"只看 packument 的 `time`**：读侧延迟仍是十次里九次的常态，回执后同一次读取即到位属例外。
+- **评审三十九种自纠形状**：本轮新增一种——"降级链的优先级写反了会怎样"（把 webRuntime 放在 webStartup 前面 ⇒ 在 0.2.1 上读到 undefined，环回仍通但配置授权失效，实测翻红一条新用例）。
+
 ## [10.16.0] - 2026-10-16
 
 > **第三方目录那句"扫描器证明不了有限调用集"，本版把它变成一条能失败的门。** 合计 **229 项质量门全过**（217 调色 + 12 工艺，两池都不碰），全套 `npm test` 532→**538 全绿**。

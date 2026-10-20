@@ -46,8 +46,11 @@ function makeRes() {
 /** Build a ctx that captures the registered route handler. */
 function makeHarness(overrides = {}) {
 	let captured = null;
+	const webStartup = overrides.webStartup !== undefined ? overrides.webStartup : undefined;
+	const webRuntime = overrides.webRuntime !== undefined ? overrides.webRuntime : { trustedHosts: overrides.trustedHosts || [] };
 	const ctx = {
-		webRuntime: { trustedHosts: overrides.trustedHosts || [] },
+		webStartup,
+		webRuntime,
 		webServer: { register(route) { captured = route; return () => {}; } },
 		effect(fn) { fn(); }
 	};
@@ -402,3 +405,54 @@ test('the reserved key and its version are documented in a file that ships in th
 	assert.deepEqual(schemaDocProblems(mutateClaimLine(text, mod.STATE_SCHEMA_KEY, (l) => l), mod.STATE_SCHEMA_KEY, mod.STATE_SCHEMA_VERSION), []);
 });
 
+// ── trustedAuthorities fallback chain (DSH 0.2.0 → 0.2.1+) ────────────────
+
+test('trustedAuthorities prefers webStartup.trustedHosts when both exist', async (t) => {
+	await loadIndex();
+	const harness = makeHarness({
+		webStartup: { trustedHosts: ['startup.example'] },
+		webRuntime: { trustedHosts: ['runtime.example'] }
+	});
+	mod.apply(harness.ctx);
+	// startup.example should be accepted, runtime.example rejected
+	const resStartup = await harness.run({ headers: { ...J, host: 'startup.example', 'sec-fetch-site': 'same-origin' }, body: '{"method":"get"}' });
+	assert.equal(resStartup.status, 200, 'webStartup authority accepted');
+	const resRuntime = await harness.run({ headers: { ...J, host: 'runtime.example', 'sec-fetch-site': 'same-origin' }, body: '{"method":"get"}' });
+	assert.equal(resRuntime.status, 403, 'webRuntime authority rejected when webStartup present');
+});
+
+test('trustedAuthorities falls back to webRuntime.trustedHosts when webStartup absent', async (t) => {
+	await loadIndex();
+	const harness = makeHarness({
+		webStartup: undefined,
+		webRuntime: { trustedHosts: ['fallback.example'] }
+	});
+	mod.apply(harness.ctx);
+	const res = await harness.run({ headers: { ...J, host: 'fallback.example', 'sec-fetch-site': 'same-origin' }, body: '{"method":"get"}' });
+	assert.equal(res.status, 200, 'webRuntime fallback accepted');
+});
+
+test('trustedAuthorities returns empty array when neither service present', async (t) => {
+	await loadIndex();
+	const harness = makeHarness({
+		webStartup: undefined,
+		webRuntime: undefined
+	});
+	mod.apply(harness.ctx);
+	// loopback still works (isLoopbackHostname guard), but arbitrary host blocked
+	const resLoopback = await harness.run({ headers: { ...J, host: 'localhost', 'sec-fetch-site': 'same-origin' }, body: '{"method":"get"}' });
+	assert.equal(resLoopback.status, 200, 'loopback always accepted');
+	const resArbitrary = await harness.run({ headers: { ...J, host: 'arbitrary.example', 'sec-fetch-site': 'same-origin' }, body: '{"method":"get"}' });
+	assert.equal(resArbitrary.status, 403, 'arbitrary host blocked with no trust source');
+});
+
+test('trustedAuthorities tolerates null services gracefully', async (t) => {
+	await loadIndex();
+	const harness = makeHarness({
+		webStartup: null,
+		webRuntime: null
+	});
+	mod.apply(harness.ctx);
+	const res = await harness.run({ headers: { ...J, host: 'localhost', 'sec-fetch-site': 'same-origin' }, body: '{"method":"get"}' });
+	assert.equal(res.status, 200, 'null services treated as absent, loopback still works');
+});
