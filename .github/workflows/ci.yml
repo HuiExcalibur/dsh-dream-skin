@@ -37,6 +37,23 @@ jobs:
       - name: Syntax check the host + client bundles
         run: node --check lib/index.js && node --check lib/client.js
 
+  # DSH-Store#1411 left one finding open: "the scanner does not prove its finite
+  # caller set" for the browser half. The fix makes every require() argument a
+  # string literal at the call site; this job runs the STANDALONE verifier (no
+  # host, no install, no test framework) so the evidence has a public CI log a
+  # reviewer can open without running our suite.
+  finite-caller-set:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enumerate every host module the browser half can require
+        run: node scripts/verify-finite-caller-set.cjs
+
   # The shipped package stays dependency-free; we pull TypeScript on demand
   # here so the advisory `.d.ts` declarations are actually compiled (they are
   # otherwise never checked, and drift silently). A local ambient stub covers
