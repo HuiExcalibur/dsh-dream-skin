@@ -282,6 +282,9 @@ grep -oE '"dsh-dream-skin:[a-z-]+"' lib/client.js | tr -d '"' | sort -u
 | `wallpaper-gradient` | `WALLPAPER_GRADIENT_KEY` | 渐变预设串（受写入门的安全校验与渲染门双重把关） |
 | `wallpaper-kind` | `WALLPAPER_KIND_KEY` | 壁纸来源类型：`image` / `url` / `gradient` |
 | `wallpaper-fit` | `WALLPAPER_FIT_KEY` | 填充方式（issue #61 加的那一项） |
+| `wallpaper-pos-x` | `WALLPAPER_POS_X_KEY` | 壁纸取景：水平偏移（视口宽度的百分比，-100..100，0 = 居中，可移出画面） |
+| `wallpaper-pos-y` | `WALLPAPER_POS_Y_KEY` | 壁纸取景：垂直偏移（视口高度的百分比，-100..100，0 = 居中，可移出画面） |
+| `wallpaper-zoom` | `WALLPAPER_ZOOM_KEY` | 壁纸取景：缩放（整数 50..300 %，默认 100 = 不缩放） |
 | `wallpaper-opacity` | `WALLPAPER_OPACITY_KEY` | 壁纸层不透明度 |
 | `wallpaper-blur` | `WALLPAPER_BLUR_KEY` | 壁纸模糊 |
 | `wallpaper-autodim` | `WALLPAPER_AUTODIM_KEY` | 自动弱化开关（`1` / `0`） |
