@@ -6500,14 +6500,84 @@ test('wallpaper framing: a gradient ignores framing (it fills its box by definit
 	assert.equal(g.main().style.transform, '', 'and no scale either');
 });
 
-test('wallpaper framing: the blur bleed layer frames the same crop', () => {
-	const { g, adv } = bootFraming();
-	adv.setFit('blur');
-	adv.setFrameX(-30);
-	adv.setFrameY(40);
+test('wallpaper framing: the blur backdrop keeps the crop and never shrinks under the zoom', () => {
+	// The halo must frame the same crop as the image, but `1.2 * zoom` alone drops under a
+	// viewport-sized box below ~83% zoom (1.2 * 0.9 = 1.08 still covers, 1.2 * 0.5 = 0.6
+	// does not) — and a halo sitting inside the viewport IS the hard-edged band #61 removes.
+	// So the multiplier is clamped at its creation value while the crop keeps following.
+	// Seed the blur fill mode directly: calling setFit('blur') would count as a fit CHANGE and
+	// reset the framing, wiping the seeded zoom (that reset is the documented behaviour).
+	const { g, adv } = bootFraming({
+		'dsh-dream-skin:wallpaper-fit': 'blur',
+		[FRAME_ZOOM_KEY]: '50'
+	});
 	const [bleed] = g.bleeds();
 	assert.ok(bleed, 'the blur fill mode creates its bleed layer');
-	assert.equal(bleed.style.backgroundPosition, g.main().style.backgroundPosition, 'the halo must not drift away from the image it sits behind');
+	const bleedScale = () => Number(/scale\(([\d.]+)\)/.exec(bleed.style.transform)[1]);
+	assert.equal(bleedScale(), 1.2,
+		'the FULL RENDER clamps below 83% — a 0.6 box would sit inside the viewport');
+	adv.setFrameX(-30);
+	adv.setFrameY(40);
+	assert.equal(g.main().style.backgroundPosition, 'calc(50% - 30vw) calc(50% + 40vh)',
+		'the sharp layer did move — otherwise the assertions below are vacuous');
+	assert.equal(bleed.style.backgroundPosition, g.main().style.backgroundPosition,
+		'the halo must not drift away from the image it sits behind');
+	assert.equal(bleedScale(), 1.2, 'the DRAG path clamps too — both sites must agree');
+	adv.setFrameZoom(150);
+	assert.ok(Math.abs(bleedScale() - 1.8) < 1e-6, 'above 100% the halo tracks the zoom');
+});
+
+test('wallpaper framing: low-power mode never resurrects the blur backdrop', () => {
+	// Issue #110 skips the bleed layer while low-power is on, and framing is a separate
+	// style-only path. The two must not fight: the full render must not create the
+	// backdrop, and a slider drag must not quietly create it afterwards. The control leg
+	// is what makes the difference attributable to the SWITCH rather than to the seed.
+	const control = bootFraming();
+	control.adv.setFit('blur');
+	control.adv.setFrameX(-40);
+	control.adv.setFrameY(25);
+	control.adv.setFrameZoom(150);
+	assert.equal(control.g.bleeds().length, 1,
+		'control: with low-power off the same sequence (fit + three drags) keeps the backdrop');
+
+	const { g, adv } = bootFraming({ 'dsh-dream-skin:performance': '1' });
+	adv.setFit('blur');
+	assert.equal(g.bleeds().length, 0, 'low-power must not create the bleed layer for fit=blur');
+	// Assert after EVERY step: a create-then-remove inside one drag would slip past a single
+	// check taken once at the end.
+	adv.setFrameX(-40);
+	assert.equal(g.bleeds().length, 0, 'dragging X must not create the bleed layer');
+	adv.setFrameY(25);
+	assert.equal(g.bleeds().length, 0, 'dragging Y must not create the bleed layer');
+	adv.setFrameZoom(150);
+	assert.equal(g.bleeds().length, 0, 'dragging the zoom must not create the bleed layer');
+	assert.equal(g.main().style.filter, 'none', 'low-power keeps the wallpaper unblurred while framing moves it');
+	assert.equal(g.main().style.backgroundPosition, 'calc(50% - 40vw) calc(50% + 25vh)',
+		'framing still moves the sharp layer — a no-op would make the two bleed assertions vacuous');
+	assert.equal(g.main().style.transform, 'scale(1.5)', 'and the zoom still applies to the sharp layer');
+});
+
+test('wallpaper framing: a framing move only repaints the layer', () => {
+	// The maintainer asked for "no horizontal scrollbar at offset = ±100". A scrollbar is
+	// the SYMPTOM of a positioned box, so this pins the cause instead of one crop of it:
+	// the layer stays `position:fixed` (out of flow, inset:0) and the only properties a
+	// framing move may touch are the two paint-only ones. `scrollWidth` is deliberately NOT
+	// asserted — the fake DOM has no layout, so that assertion would be vacuously true, and
+	// a gate that cannot fail is worse than no gate.
+	const { g, adv } = bootFraming();
+	const layer = g.main();
+	assert.ok(String(layer.style.cssText).includes('position:fixed'), 'the layer starts out of flow');
+	assert.ok(String(layer.style.cssText).includes('inset:0'), 'and pinned to the viewport box');
+	const before = { ...layer.style };
+	adv.setFrameX(100);
+	adv.setFrameY(-100);
+	adv.setFrameZoom(300);
+	const after = { ...layer.style };
+	const changed = Object.keys(after).filter((k) => after[k] !== before[k]).sort();
+	assert.deepEqual(changed, ['backgroundPosition', 'transform'],
+		`a framing move must only repaint — changed: ${changed.join(', ') || '(nothing)'}`);
+	assert.equal(after.backgroundPosition, 'calc(50% + 100vw) calc(50% - 100vh)', 'the ±100 corners really are applied');
+	assert.equal(after.transform, 'scale(3)', 'and so is the 300 % zoom — otherwise the check is vacuous');
 });
 
 test('wallpaper framing: junk values are clamped for rendering and never written back', () => {
