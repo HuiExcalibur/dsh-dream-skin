@@ -3527,6 +3527,80 @@ test('issue #100: the slider says so when the floor is holding it (marker wired,
 	}
 });
 
+test('issue #115: low-power floors the menu fill, so removing the frost cannot make menus MORE transparent', () => {
+	// The 10.21.1 switch cleared every backdrop-filter but left the menu fill at the
+	// skins' authored 0.46 / 0.58. A frosted pane reads as solid because the BLUR
+	// hides what is behind it; without the blur the same alpha is a plastic film you
+	// read the chat through — the switch labelled "reduce transparency" made menus
+	// more transparent than normal. The fix floors ONE channel (--dsw-menu-surface-fill)
+	// only while the switch is on, with the skin's own hue, and emits nothing when off.
+	const FLOOR = 0.92;
+	const MENU = 'rgba(39, 42, 48, 0.46)';
+	const alphaOf = (value) => Number(/,\s*([\d.]+)\)/.exec(String(value))[1]);
+	const rgbOf = (value) => {
+		const body = /^rgba?\(([^)]+)\)$/.exec(String(value).replace(/\s/g, ''));
+		assert.ok(body, `expected an rgb()/rgba() colour, got ${value}`);
+		return body[1].split(',').slice(0, 3).join(',');
+	};
+	const boot = (perf) => {
+		const attrs = new Map();
+		const styleProps = {};
+		const overrides = new Map();
+		const documentMock = {
+			body: { contains: () => false, prepend() {}, appendChild() {} },
+			head: { children: [], contains() { return false; }, appendChild() {}, append(c) { this.children.push(c); } },
+			createElement() { return { style: {}, dataset: {}, textContent: '', remove() {}, append() {} }; },
+			createTextNode: () => ({}),
+			querySelector: () => null,
+			querySelectorAll: () => [],
+			documentElement: {
+				style: { setProperty(k, v) { styleProps[k] = v; } },
+				setAttribute(k, v) { attrs.set(k, v); },
+				removeAttribute(k) { attrs.delete(k); }
+			}
+		};
+		const theme = {
+			setTheme() {},
+			getTheme() {
+				return { preference: 'abyss', active: { id: 'abyss', colorScheme: 'dark', tokens: {
+					'--dsw-alias-bg-base': '#0b0b0e',
+					'--dsw-alias-bg-layer-2': 'rgba(22, 22, 28, 0.85)',
+					'--dsw-menu-surface-fill': MENU
+				} }, themes: [], revision: 1 };
+			},
+			overrideTokens(source, tokens) { overrides.set(source, { ...tokens }); return () => {}; }
+		};
+		const seed = { 'dsh-dream-skin:modal-opacity': '0.4' };
+		if (perf) seed['dsh-dream-skin:performance'] = '1';
+		const h = buildSandbox({ document: documentMock, seed });
+		const e = h.factory(makeRequire(makeRuntime().RT));
+		e.apply({ ...makeApplyContext(h, { captureActions: true }), theme });
+		return { h, layer: () => overrides.get('dsh-dream-skin:appearance') || {}, bag: h.actionBags['dream-skin-glass'] };
+	};
+
+	const on = boot(true);
+	const menuOn = on.layer()['--dsw-menu-surface-fill'];
+	assert.ok(menuOn, 'low-power emits the menu-floor override');
+	assert.ok(alphaOf(menuOn.dark) >= FLOOR, `the dark menu must hold the floor, got ${alphaOf(menuOn.dark)}`);
+	assert.ok(alphaOf(menuOn.light) >= FLOOR, `the light menu must hold the floor, got ${alphaOf(menuOn.light)}`);
+	assert.equal(rgbOf(menuOn.dark), rgbOf(MENU), 'the skin\'s own menu hue is preserved (not repainted in the canvas colour)');
+	// The INACTIVE scheme's hue falls back to the built-in base exactly like layer-2
+	// does: the theme object only carries the active scheme's tokens. The floor (the
+	// part this fix owns) still applies to both, asserted above.
+
+	const off = boot(false);
+	assert.equal(off.layer()['--dsw-menu-surface-fill'], undefined,
+		'normal mode does not touch the menu channel at all — the authored glass stays');
+
+	// The override is keyed on the switch, so the toggle must both add and withdraw it.
+	off.bag.setPerformance(true);
+	assert.ok(off.layer()['--dsw-menu-surface-fill'], 'turning the switch on emits the floor without a reload');
+	assert.ok(alphaOf(off.layer()['--dsw-menu-surface-fill'].dark) >= FLOOR, 'and it is the same floor');
+	off.bag.setPerformance(false);
+	assert.equal(off.layer()['--dsw-menu-surface-fill'], undefined,
+		'turning it off withdraws the floor immediately (menus go back to the authored alpha)');
+});
+
 test('issue #103: mist seeds BELOW the floor on purpose, and both halves of that claim are pinned', () => {
 	// A deliberate deviation with no gate is a deviation waiting to be "fixed" by
 	// someone who cannot tell it was a decision (issue #95's whole complaint). mist
