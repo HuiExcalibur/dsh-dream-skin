@@ -6427,6 +6427,170 @@ test('dockkit right panel: the fullscreen gate rides the wash marker lifecycle',
 	assert.equal(attrs.has(gate[1]), false, 'and it is retracted with the wash layer');
 });
 
+// ── wallpaper framing — viewport offsets + zoom ──────────────────────────────
+// The "fit" control (#61) decides how the photo meets its box; framing decides
+// WHERE inside that box it sits and how large it is. Percentage positioning
+// alone is trapped by (container − image) — 0 % pins one edge, 100 % the other,
+// so a percentage can never leave the frame. Offsets are therefore expressed in
+// vw/vh, and zoom is a scale on the same layer.
+const FRAME_X_KEY = 'dsh-dream-skin:wallpaper-pos-x';
+const FRAME_Y_KEY = 'dsh-dream-skin:wallpaper-pos-y';
+const FRAME_ZOOM_KEY = 'dsh-dream-skin:wallpaper-zoom';
+
+/** Boot the bundle with a URL wallpaper plus any framing seed, and hand back the row actions. */
+function bootFraming(seed = {}, doc = mkWallpaperDoc()) {
+	const h = buildSandbox({
+		document: doc.doc,
+		seed: {
+			'dsh-dream-skin:wallpaper-kind': 'url',
+			'dsh-dream-skin:wallpaper-url': 'https://cdn.example.com/wide.jpg',
+			'dsh-dream-skin:wallpaper-follows-skin': '0',
+			...seed
+		}
+	});
+	const e = h.factory(makeRequire(makeRuntime().RT));
+	e.apply(makeApplyContext(h, { captureActions: true }));
+	return { h, g: doc, adv: h.actionBags['dream-skin-wallpaper-advanced'] };
+}
+
+test('wallpaper framing: an untouched wallpaper renders 50/50 at 100 %, and stores nothing', () => {
+	const { h, g } = bootFraming();
+	assert.equal(g.main().style.backgroundPosition, '50% 50%', 'centred by default — byte-identical to the pre-framing render');
+	assert.equal(g.main().style.transform, '', 'no scale at 100 %');
+	assert.equal(h.localStorage.getItem(FRAME_X_KEY), null, 'reading must not invent a stored value');
+	assert.equal(h.localStorage.getItem(FRAME_ZOOM_KEY), null, 'reading must not invent a stored value');
+});
+
+test('wallpaper framing: offsets are viewport units, so the image can leave the frame', () => {
+	const { h, g, adv } = bootFraming();
+	adv.setFrameX(-100);
+	assert.equal(h.localStorage.getItem(FRAME_X_KEY), '-100', 'a left offset persists as a signed integer');
+	assert.equal(g.main().style.backgroundPosition, 'calc(50% - 100vw) 50%', 'negative offsets subtract — never "calc(50% + -100vw)"');
+	adv.setFrameY(60);
+	assert.equal(h.localStorage.getItem(FRAME_Y_KEY), '60');
+	assert.equal(g.main().style.backgroundPosition, 'calc(50% - 100vw) calc(50% + 60vh)');
+	adv.resetFrame();
+	assert.equal(h.localStorage.getItem(FRAME_X_KEY), '0', 'reset writes the centred default back');
+	assert.equal(h.localStorage.getItem(FRAME_Y_KEY), '0');
+	assert.equal(h.localStorage.getItem(FRAME_ZOOM_KEY), '100');
+	assert.equal(g.main().style.backgroundPosition, '50% 50%', 'and the render returns to the untouched form');
+});
+
+test('wallpaper framing: zoom scales the layer and is clamped to 50–300 %', () => {
+	const { h, g, adv } = bootFraming();
+	adv.setFrameZoom(50);
+	assert.equal(h.localStorage.getItem(FRAME_ZOOM_KEY), '50', 'the lower bound is 50 %, not 100 %');
+	assert.equal(g.main().style.transform, 'scale(0.5)');
+	adv.setFrameZoom(1000);
+	assert.equal(h.localStorage.getItem(FRAME_ZOOM_KEY), '300', 'out-of-range writes clamp BEFORE persisting');
+	assert.equal(g.main().style.transform, 'scale(3)');
+	adv.setFrameZoom(100);
+	assert.equal(g.main().style.transform, '', '100 % is identity — no transform may be left behind');
+});
+
+test('wallpaper framing: a gradient ignores framing (it fills its box by definition)', () => {
+	const { g } = bootFraming({
+		'dsh-dream-skin:wallpaper-kind': 'gradient',
+		'dsh-dream-skin:wallpaper-gradient': 'linear-gradient(135deg, #000 0%, #fff 100%)',
+		[FRAME_X_KEY]: '-50',
+		[FRAME_Y_KEY]: '25',
+		[FRAME_ZOOM_KEY]: '200'
+	});
+	assert.equal(g.main().style.backgroundPosition, '50% 50%', 'a stored offset is ignored, not applied');
+	assert.equal(g.main().style.transform, '', 'and no scale either');
+});
+
+test('wallpaper framing: the blur bleed layer frames the same crop', () => {
+	const { g, adv } = bootFraming();
+	adv.setFit('blur');
+	adv.setFrameX(-30);
+	adv.setFrameY(40);
+	const [bleed] = g.bleeds();
+	assert.ok(bleed, 'the blur fill mode creates its bleed layer');
+	assert.equal(bleed.style.backgroundPosition, g.main().style.backgroundPosition, 'the halo must not drift away from the image it sits behind');
+});
+
+test('wallpaper framing: junk values are clamped for rendering and never written back', () => {
+	const { h, g } = bootFraming({
+		[FRAME_X_KEY]: '500',
+		[FRAME_Y_KEY]: 'abc',
+		[FRAME_ZOOM_KEY]: '999'
+	});
+	assert.equal(g.main().style.backgroundPosition, 'calc(50% + 100vw) 50%', '500 clamps to 100; "abc" falls back to the centred default');
+	assert.equal(g.main().style.transform, 'scale(3)', '999 clamps to 300');
+	assert.equal(h.localStorage.getItem(FRAME_X_KEY), '500', 'a tampered value is NOT rewritten (same discipline as fit)');
+	assert.equal(h.localStorage.getItem(FRAME_Y_KEY), 'abc');
+	assert.equal(h.localStorage.getItem(FRAME_ZOOM_KEY), '999');
+});
+
+test('wallpaper framing: a new picture or a fill-mode change starts from centre', () => {
+	const { h, adv } = bootFraming();
+	const wallpaper = h.actionBags['dream-skin-wallpaper'];
+	assert.ok(wallpaper, 'the wallpaper row exposes its actions');
+	adv.setFrameX(40);
+	adv.setFrameY(-20);
+	adv.setFrameZoom(150);
+	wallpaper.setWallpaper('data:image/jpeg;base64,AAAA');
+	assert.equal(h.localStorage.getItem(FRAME_X_KEY), '0', 'a different picture must not inherit the old offsets');
+	assert.equal(h.localStorage.getItem(FRAME_Y_KEY), '0');
+	assert.equal(h.localStorage.getItem(FRAME_ZOOM_KEY), '100');
+	assert.equal(h.storeStates['dream-skin-wallpaper-advanced'].hasImage, true,
+		'the row state learns a picture exists — the framing group re-renders on THIS slice, not on a storage read');
+	adv.setFrameX(-30);
+	adv.setFit('contain');
+	assert.equal(h.localStorage.getItem(FRAME_X_KEY), '0', '完整显示 shows the whole photo only when the offsets are cleared');
+	adv.setFrameX(-30);
+	adv.setFit('contain');
+	assert.equal(h.localStorage.getItem(FRAME_X_KEY), '-30', 're-clicking the same mode is not a change and must not wipe the framing');
+	wallpaper.clearWallpaper();
+	assert.equal(h.storeStates['dream-skin-wallpaper-advanced'].hasImage, false, 'clearing hides the framing group again');
+});
+
+test('wallpaper framing: a slider move updates styles without republishing the token layer', () => {
+	// Framing changes no token, so it must not take the applyWallpaper2 route: that
+	// path republishes the whole override layer, and the host emits theme/change on
+	// every publish — once per pixel of a slider drag. The write-budget counter is
+	// the witness; the same harness keeps the seeded wallpaper painted, so a fallback
+	// to the full render cannot hide behind a missing layer.
+	const p = makeWriteBudgetHarness({
+		seed: {
+			'dsh-dream-skin:wallpaper-kind': 'url',
+			'dsh-dream-skin:wallpaper-url': 'https://cdn.example.com/wide.jpg',
+			'dsh-dream-skin:wallpaper-follows-skin': '0'
+		}
+	});
+	const layer = p.h.document.body.children.find(
+		(el) => typeof el.style.backgroundImage === 'string' && el.style.backgroundImage !== ''
+	);
+	assert.ok(layer, 'the seeded wallpaper painted a live layer before the slider moved');
+	const publishedBefore = p.counts.publish;
+	p.h.actionBags['dream-skin-wallpaper-advanced'].setFrameX(-25);
+	assert.equal(layer.style.backgroundPosition, 'calc(50% - 25vw) 50%',
+		'the style-only path still moves the LIVE layer — a no-op would make the publish assertion vacuous');
+	assert.equal(p.counts.publish, publishedBefore,
+		`a framing slider republished the token layer (${p.counts.publish - publishedBefore} publish(es)) — framing changes no token`);
+});
+
+test('wallpaper framing: a different URL recentres, re-applying the same URL does not', () => {
+	const { h, g, adv } = bootFraming();
+	adv.setFrameX(-40);
+	adv.setFrameY(25);
+	adv.setFrameZoom(180);
+	adv.setUrl('https://cdn.example.com/other.jpg');
+	assert.equal(h.localStorage.getItem(FRAME_X_KEY), '0', 'a different link is a different composition — X recentres');
+	assert.equal(h.localStorage.getItem(FRAME_Y_KEY), '0', 'Y recentres too');
+	assert.equal(h.localStorage.getItem(FRAME_ZOOM_KEY), '100', 'and the zoom returns to identity');
+	assert.equal(g.main().style.backgroundPosition, '50% 50%', 'the live layer shows the recentred crop');
+
+	adv.setFrameX(-40);
+	adv.setFrameZoom(180);
+	adv.setUrl('https://cdn.example.com/other.jpg');
+	assert.equal(h.localStorage.getItem(FRAME_X_KEY), '-40',
+		're-applying the SAME link is not a new composition and must not wipe the framing');
+	assert.equal(h.localStorage.getItem(FRAME_ZOOM_KEY), '180');
+	assert.equal(g.main().style.backgroundPosition, 'calc(50% - 40vw) 50%', 'and the user crop stays on screen');
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Issue #84 — write-volume accounting for a skin switch
 // ═══════════════════════════════════════════════════════════════════════════
