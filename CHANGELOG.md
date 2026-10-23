@@ -34,6 +34,9 @@
 - **10 次反向破坏：8 次各自点名翻红**（删 OS 回退 / 从不挂监听 / 删释放 effect / 少重绘壁纸 / 少同步行 / 复位写成 `0` / 删固定选择守卫 / `syncGlass` 不再报是否固定）。
 - **2 次故意留绿，写在这里而不是假装覆盖**：① 把 store 的 `performanceAuto` init 改成恒 `true` 不翻红——第一次 sync 一定覆盖它，行渲染不到那么早；这一维真正的决策在 sync，已由上一条破坏覆盖。② 删掉 `restorePersistedState()` 里那次 `applyPerformanceMode()` 不翻红——fixture 在求值前就把 localStorage 灌满，boot 与 restore 的解析值必然相同，这条防线在单元测试里不可见（它服务的是桌面壳那条路径，见下「未验证」）。
 - 套件 **569→571**；`docs/desktop-support.md` 的兼容表、已验证清单与 `performance` 键语义行同步；README 当前版本块同步。
+- **发布后追加（不改发货产物，故未重发）**：第三方目录的收录扫描（`hashgraph-online/awesome-ai-plugins#947` 的 HOL AI Plugin Scanner，来源 commit `b5d4dee`，score 70/80）报了三类，处置分两种：
+  - **照做**：`.github/workflows/*` 的 12 处 `uses: actions/*@v4` 全部改成不可变 commit SHA（`actions/checkout@11d5960… # v4.4.0`、`actions/setup-node@49933ea… # v4.4.0`）。两枚 SHA 都从 GitHub 的 tag ref 现读并核对 `object.type=commit`，而且**正是 `@v4` 当天解析到的那两个 commit**——所以这是加锁，不是升级；新增 `.github/dependabot.yml`，只盯 `github-actions`：本仓库零运行时依赖、CI 连 `npm install` 都不跑，唯一执行的外部代码就是这些 action 与 `npx -p typescript@5.6.3`（后者本来就写死了确切版本）。
+  - **不照做，并留下证据**：4 处 `HARDCODED_SECRET` 与 3 处 `DANGEROUS_DYNAMIC_EXECUTION` 逐条看过，全是误报——所谓 secret 是 **CSS token 的名字**（`--dsw-alias-bg-base`、`dangerToken = "--dsw-alias-interactive-bg-hover-danger"`、`footToken: 'AAAA_footArea'`、`token: '_fade'`），所谓 dynamic execution 是我们测试自己的 `node:vm` 沙箱（`vm.runInContext`）。这类分数我们不追：为了让扫描器闭嘴而把 CSS 变量改名，代价是让审计面更难读，正是 #1411 那轮谈过一次的那句话——**外部判据逼你改形状时，先量这形状是谁定的、为什么定**。
 
 ### 四、诚实边界
 
