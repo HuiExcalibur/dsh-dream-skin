@@ -390,7 +390,7 @@ function buildSandbox(overrides = {}) {
 	sandbox.window.__ModuleLoader__ = { load: (o) => { factory = o.factory; } };
 	sandbox.window.location = loc;
 	sandbox.window.history = sandbox.history;
-	for (const k of ['document', 'localStorage', 'btoa', 'atob']) sandbox.window[k] = sandbox[k];
+	for (const k of ['document', 'localStorage', 'btoa', 'atob', 'matchMedia']) sandbox.window[k] = sandbox[k];
 	const context = vm.createContext(sandbox);
 	// overrides.code lets a test patch the bundle source (e.g. pin the migration
 	// fingerprint constants to a synthetic fixture) without touching lib/client.js.
@@ -5939,6 +5939,152 @@ test('issue #110: low-power mode drops backdrop-filter, the wallpaper blur and t
 	assert.equal(restored.find((el) => el.style.filter === 'blur(7px)') !== undefined, true,
 		'and the user blur comes back');
 });
+
+test('issue #110 follow-up: automatic low-power follows the OS, and a pinned choice outranks it', () => {
+	// #110's own A/B on the M4 measured 23% idle GPU with the frost on and 11% with it
+	// off, so the flat render is the cheaper one — and the people who already told the
+	// OS "less transparency" are the same people. Hence three states: an ABSENT key is
+	// automatic (resolve from the OS), "1"/"0" are pinned by the user and win.
+	// Honest boundary of this harness: it asserts the ATTRIBUTE, the rendered layers and
+	// the STORE FIELDS the row reads — the React component itself is never rendered here
+	// (slots.register ignores the component), so "the row shows 交还给自动" is not proven
+	// by this file; that it is not mouse-only is proven by the `button` tag, not by a gate.
+	const ATTR = 'data-dsh-dream-skin-performance';
+	const SEED = {
+		'dsh-dream-skin:wallpaper': 'data:image/png;base64,AAAA',
+		'dsh-dream-skin:wallpaper-blur': '7',
+		'dsh-dream-skin:wallpaper-fit': 'blur'
+	};
+	const mqlOf = (matches) => {
+		const listeners = [];
+		return {
+			media: '(prefers-reduced-transparency: reduce)', matches, listeners,
+			addEventListener(type, fn) { if (type === 'change') listeners.push(fn); },
+			removeEventListener(type, fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); },
+			set(next) { this.matches = next; for (const fn of listeners.slice()) fn(this); }
+		};
+	};
+	const painted = (h) => h.document.body.children.filter(
+		(el) => typeof el.style.backgroundImage === 'string' && el.style.backgroundImage !== ''
+	);
+	const start = (osReduce, seed = {}) => {
+		const mql = mqlOf(osReduce);
+		const h = buildSandbox({ seed: { ...SEED, ...seed }, matchMedia: () => mql });
+		const e = h.factory(makeRequire(makeRuntime().RT));
+		e.apply(makeApplyContext(h, { captureActions: true }));
+		return { h, mql, glass: h.actionBags['dream-skin-glass'], row: h.storeStates['dream-skin-glass'] };
+	};
+
+	// 1. Automatic + OS says reduce → low-power from the first frame, no user action.
+	const auto = start(true);
+	assert.equal(auto.h.document.documentElement.getAttribute(ATTR), '1',
+		'a machine whose OS asked for less transparency gets the flat render without finding the switch');
+	assert.equal(painted(auto.h).length, 1, 'the bleed layer is not created');
+	assert.equal(painted(auto.h)[0].style.filter, 'none', 'the wallpaper is not blurred');
+	assert.equal(auto.row.performance, true, 'the row reads the RESOLVED state');
+	assert.equal(auto.row.performanceAuto, true, 'and knows the user never pinned anything');
+
+	// 2. Automatic + OS has no preference → the shipped look, bit for bit (control).
+	const plain = start(false);
+	assert.equal(plain.h.document.documentElement.getAttribute(ATTR), null,
+		'no OS preference means automatic resolves to the glass look');
+	assert.equal(painted(plain.h).length, 2, 'control: bleed + image');
+	assert.equal(plain.row.performance, false, 'the row is unchecked');
+	assert.equal(plain.row.performanceAuto, true, 'but still automatic');
+
+	// 3. Pinned OFF on a machine that reports reduce → the user wins, both halves.
+	const off = start(true, { 'dsh-dream-skin:performance': '0' });
+	assert.equal(off.h.document.documentElement.getAttribute(ATTR), null,
+		'an explicit 0 outranks the OS — the whole point of pinning');
+	assert.equal(painted(off.h).length, 2, 'and the wallpaper half agrees with the CSS half');
+	assert.equal(off.row.performance, false);
+	assert.equal(off.row.performanceAuto, false, 'the row must now offer to hand the choice back');
+
+	// 4. Pinned ON with no OS preference → also wins.
+	const on = start(false, { 'dsh-dream-skin:performance': '1' });
+	assert.equal(on.h.document.documentElement.getAttribute(ATTR), '1');
+	assert.equal(on.row.performance, true);
+
+	// 5. The OS changes while the choice is automatic → re-render live, not on reload.
+	const live = start(false);
+	assert.equal(live.h.document.documentElement.getAttribute(ATTR), null, 'before');
+	live.mql.set(true);
+	assert.equal(live.h.document.documentElement.getAttribute(ATTR), '1',
+		'an OS flip while automatic repaints the CSS switch');
+	assert.equal(painted(live.h).length, 1, '…the wallpaper (the blur and the bleed layer)…');
+	assert.equal(live.row.performance, true, '…and the row, so the checkbox does not lie');
+	assert.equal(live.h.localStorage.getItem('dsh-dream-skin:performance'), null,
+		'following the OS writes nothing: the key stays absent so the state remains automatic');
+
+	// 6. …but once the user pins it, an OS flip must not revoke that decision.
+	live.glass.setPerformance(false);
+	assert.equal(live.h.localStorage.getItem('dsh-dream-skin:performance'), '0', 'pinned off');
+	const pinnedRevision = live.row.revision;
+	live.mql.set(false);
+	live.mql.set(true);
+	assert.equal(live.h.document.documentElement.getAttribute(ATTR), null,
+		'a pinned choice survives the OS changing under it (#110 must not become a surprise)');
+	assert.equal(live.row.revision, pinnedRevision,
+		'and the page is not even re-rendered: readPerformanceMode is the single source, so a '
+		+ 'pinned decision means an OS flip costs this window nothing — no repaint, no flash');
+
+	// 7. Handing it back is reachable, and "back to automatic" is absence, not a new value.
+	live.glass.setPerformanceAuto();
+	assert.equal(live.h.localStorage.getItem('dsh-dream-skin:performance'), null,
+		'the reset drops the key rather than inventing a third sentinel value');
+	assert.equal(live.h.document.documentElement.getAttribute(ATTR), '1',
+		'so the live OS preference resolves immediately, without a reload');
+	assert.equal(live.row.performanceAuto, true, 'and the row goes back to showing the automatic hint');
+
+	// 8. A DOM without the media feature at all keeps the shipped look (the guard, not a throw).
+	const noFeature = buildSandbox({ seed: { ...SEED } });
+	const eNo = noFeature.factory(makeRequire(makeRuntime().RT));
+	assert.doesNotThrow(() => eNo.apply(makeApplyContext(noFeature, { captureActions: true })),
+		'an engine with no matchMedia must not break the mount');
+	assert.equal(noFeature.document.documentElement.getAttribute(ATTR), null,
+		'and automatic resolves to the shipped look there');
+});
+
+test('issue #110 follow-up: the reduce-transparency listener belongs to the fiber that armed it', () => {
+	// The listener re-renders the wallpaper and the token layer, so a retired
+	// generation holding one is not harmless: it can repaint the live page through
+	// stale closures. It is therefore armed inside apply() and disposed by that
+	// fiber's own effect — the same identity discipline as the nav hook and the
+	// wash-flip hook. Two generations in ONE context, opposite expectations.
+	const ATTR = 'data-dsh-dream-skin-performance';
+	const mql = mqlOfRecording();
+	const h = buildSandbox({
+		seed: { 'dsh-dream-skin:wallpaper': 'data:image/png;base64,AAAA' },
+		matchMedia: () => mql
+	});
+	const e = h.factory(makeRequire(makeRuntime().RT));
+	const ctxA = makeApplyContext(h);
+	e.apply(ctxA);
+	const afterFirst = (h.disposers || []).length;
+	const ctxB = makeApplyContext(h);
+	e.apply(ctxB);
+	assert.equal(mql.listeners.length, 2, 'two live fibers armed two listeners');
+
+	// The STALE fiber unloads: the live one must keep working.
+	for (const d of (h.disposers || []).slice(0, afterFirst)) d();
+	assert.equal(mql.listeners.length, 1, 'a stale dispose removes only its own listener');
+	mql.set(true);
+	assert.equal(h.document.documentElement.getAttribute(ATTR), '1',
+		'the surviving listener still follows the OS — the retired fiber did not disarm it');
+
+	for (const d of (h.disposers || []).slice(afterFirst)) d();
+	assert.equal(mql.listeners.length, 0, 'and the live unload leaves no listener behind');
+});
+
+function mqlOfRecording() {
+	const listeners = [];
+	return {
+		media: '(prefers-reduced-transparency: reduce)', matches: false, listeners,
+		addEventListener(type, fn) { if (type === 'change') listeners.push(fn); },
+		removeEventListener(type, fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); },
+		set(next) { this.matches = next; for (const fn of listeners.slice()) fn(this); }
+	};
+}
 
 test('issue #61 (fill mode): a gradient ignores it, and both gates whitelist the value', () => {
 	// A gradient has no intrinsic aspect ratio, so `fit` must not change how it
