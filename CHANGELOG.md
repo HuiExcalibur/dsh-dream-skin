@@ -38,6 +38,7 @@
 ### 四、诚实边界
 
 - **壳会不会转发系统偏好，未验证。** DevTools 的 `Rendering → Emulate prefers-reduced-transparency` 只证明**接线**正确，不证明 macOS 的「减少透明度」能穿过 Electron 到达页面层。已请报告人在 M4 上读 `matchMedia('(prefers-reduced-transparency: reduce)').matches` 的开 / 关各一次。若两次都是 `false`，「自动」这一维就仍是关（外观不变、不写键、不报错），方案改成别的判据而不是让它悄悄失效。
+- **发版后本机补到的一条读数（方向确认了一半，`issuecomment-6364794316`）**：真实引擎里连续两样本 `matchMedia('(prefers-reduced-transparency: reduce)').matches = true`、`(…no-preference) = false`，而同机注册表 `HKCU\…\Themes\Personalize\EnableTransparency = 0x0`（系统设置的「透明效果」= 关）——两边一致，所以这一媒体特性**不是恒真的桩**，且是按特性分别转发的（同页 `prefers-reduced-motion` 为 `false`）。**仍未量的**：① 那是 Qoder 的 Electron 43 / Chromium 150 壳，不是 DSH 桌面壳；② 只量到「系统关 ⇒ reduce」这一边，「系统开 ⇒ no-preference」要改本机系统设置才能验，没擅自改。这条读数只进了仓库与本 CHANGELOG：**`CHANGELOG.md` 不在 npm `files` 白名单里，README 的 npm 副本也仍是发版那一刻的文字**——它说的话没有过错，只是比仓库少这一条；随下一版带上。
 - **本版没有降低任何人的默认外观**：系统未开「减少透明度」时，自动解析为关；10.21.1 之前装的用户从不写这枚键，所以他们的页面与今天逐像素相同。
 - **余量变小了**：`lib/client.js` 478,503 → 485,394 B（+6,891 B）。480 KiB 天花板未动，余量 13,017 → **6,126 B**。这是 #118 那条「把天花板抬到 576 KiB」讨论里必须一起算进来的数——本仓库的天花板是在 `AI-Scarlett/DSH-Store#1411` 里对外声明过的预算。
 - 壁纸层自身那 11% 空闲成本仍在本版读数里，未处理，需要 Performance 录制才能继续归因。
