@@ -37,6 +37,7 @@
 - **发布后追加（不改发货产物，故未重发）**：第三方目录的收录扫描（`hashgraph-online/awesome-ai-plugins#947` 的 HOL AI Plugin Scanner，来源 commit `b5d4dee`，score 70/80）报了三类，处置分两种：
   - **照做**：`.github/workflows/*` 的 12 处 `uses: actions/*@v4` 全部改成不可变 commit SHA（`actions/checkout@11d5960… # v4.4.0`、`actions/setup-node@49933ea… # v4.4.0`）。两枚 SHA 都从 GitHub 的 tag ref 现读并核对 `object.type=commit`，而且**正是 `@v4` 当天解析到的那两个 commit**——所以这是加锁，不是升级；新增 `.github/dependabot.yml`，只盯 `github-actions`：本仓库零运行时依赖、CI 连 `npm install` 都不跑，唯一执行的外部代码就是这些 action 与 `npx -p typescript@5.6.3`（后者本来就写死了确切版本）。
   - **不照做，并留下证据**：4 处 `HARDCODED_SECRET` 与 3 处 `DANGEROUS_DYNAMIC_EXECUTION` 逐条看过，全是误报——所谓 secret 是 **CSS token 的名字**（`--dsw-alias-bg-base`、`dangerToken = "--dsw-alias-interactive-bg-hover-danger"`、`footToken: 'AAAA_footArea'`、`token: '_fade'`），所谓 dynamic execution 是我们测试自己的 `node:vm` 沙箱（`vm.runInContext`）。这类分数我们不追：为了让扫描器闭嘴而把 CSS 变量改名，代价是让审计面更难读，正是 #1411 那轮谈过一次的那句话——**外部判据逼你改形状时，先量这形状是谁定的、为什么定**。
+  - **续**：按对方 `SCANNER_GUIDE.md` 把源仓库侧扫描也接上了（`.github/workflows/plugin-scan.yml`，`push` 与 `pull_request` 都跑；`contents: read` + 无 secrets + `persist-credentials: false` + 两个 action 都钉 commit；扫描器钉在指南文档的 `v1.2.635`）。第一次读数 **82/100 (B - Good)**，`min_score: 80` 判定 success（run `39967454320`，源 commit `118d2e1`）——即「12 处 action 加锁 + dependabot」这两项就把 70 推过了门槛。仍扣分的是上面那两组误报；本仓库 CI 因此用 `fail_on_severity: none`，与目录"severity 是上下文、分数才是门"的口径一致。
 
 ### 四、诚实边界
 
