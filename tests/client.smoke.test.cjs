@@ -6591,6 +6591,14 @@ test('wallpaper framing: junk values are clamped for rendering and never written
 	assert.equal(h.localStorage.getItem(FRAME_X_KEY), '500', 'a tampered value is NOT rewritten (same discipline as fit)');
 	assert.equal(h.localStorage.getItem(FRAME_Y_KEY), 'abc');
 	assert.equal(h.localStorage.getItem(FRAME_ZOOM_KEY), '999');
+	// An empty stored value is "not set", not "zero": `Number('') === 0` would clamp the
+	// zoom to its 50 % floor instead of the shipped 100 %, and the min is where a wrong
+	// reading does the most visible damage. A hand-edited state file or a host round-trip
+	// can deliver "", and the design says bad values fall back to the default.
+	const blank = bootFraming({ [FRAME_ZOOM_KEY]: '', [FRAME_Y_KEY]: '   ' });
+	assert.equal(blank.g.main().style.transform, '', 'an empty zoom renders as the 100 % default, not 50 %');
+	assert.equal(blank.g.main().style.backgroundPosition, '50% 50%', 'a blank offset is centred');
+	assert.equal(blank.h.localStorage.getItem(FRAME_ZOOM_KEY), '', 'and it is still not written back');
 });
 
 test('wallpaper framing: a new picture or a fill-mode change starts from centre', () => {
@@ -7340,11 +7348,13 @@ test('rotation: a due rotation shows the next link, keeps history and the stored
 
 test('rotation: an automatic rotation keeps the manual framing — it never recentres the user crop', () => {
 	// A DECISION, not a coincidence (review 2026-10-23, and #95's "don't quietly fix it"):
-	// rotation is an AUTOMATIC event, and automatic events never overwrite a manual
-	// setting — the same family as "low-power does not pause rotation". A user who typed a
-	// URL (or picked an image) IS changing the composition, so `setUrl` / `setImage` reset
-	// the framing; the timer is not the user. The scheduled URL refresh takes the same
-	// path, so this is a rule with two members, not a quirk of one call site.
+	// rotation only swaps the LINK — timed, or the「next now」button — so it is not the user
+	// choosing a new composition, and an automatic event must never overwrite a manual
+	// setting (the same family as "low-power does not pause rotation"). A user who types a
+	// URL (or picks an image) IS choosing a new composition, so `setUrl` / `setImage` reset
+	// the framing. The scheduled URL refresh follows the same RULE — it never resets the
+	// framing either — even though it is a separate code path, so this is a rule rather
+	// than a quirk of one call site.
 	const r = bootRotation({
 		seed: { [FRAME_X_KEY]: '-40', [FRAME_Y_KEY]: '25', [FRAME_ZOOM_KEY]: '180' }
 	});
@@ -7352,9 +7362,19 @@ test('rotation: an automatic rotation keeps the manual framing — it never rece
 	assert.equal(r.h.localStorage.getItem(FRAME_X_KEY), '-40', 'the manual X offset survives the rotation');
 	assert.equal(r.h.localStorage.getItem(FRAME_Y_KEY), '25', 'and Y');
 	assert.equal(r.h.localStorage.getItem(FRAME_ZOOM_KEY), '180', 'and the zoom');
+	assert.equal(r.rendered(), r.probes[0].url, 'the crop is painted on the NEXT link, not on the old picture');
 	assert.equal(r.g.main().style.backgroundPosition, 'calc(50% - 40vw) calc(50% + 25vh)',
 		'the rotated image is painted with the user crop, not centred');
 	assert.equal(r.g.main().style.transform, 'scale(1.8)', 'and with the user zoom');
+	// The「next now」button is the same operation with the timer skipped: the user asked to
+	// advance the link, not to recompose, so the rule has to hold there too — otherwise it
+	// is really "timers are special", which is not the reason written above.
+	r.adv.rotateNow();
+	assert.equal(r.url(), ROT_C, 'precondition: the button advanced the link');
+	assert.equal(r.h.localStorage.getItem(FRAME_X_KEY), '-40', 'a manual "next now" keeps the crop as well');
+	assert.equal(r.h.localStorage.getItem(FRAME_ZOOM_KEY), '180');
+	assert.equal(r.g.main().style.backgroundPosition, 'calc(50% - 40vw) calc(50% + 25vh)',
+		'and the advanced link is painted with it');
 	// Reverse leg, so nobody reads this as "the reset simply did not run": a MANUAL change
 	// of the same URL kind must still recentre — that is the rule this one is carved out of.
 	r.adv.setUrl('https://cdn.example.com/manual.jpg');
