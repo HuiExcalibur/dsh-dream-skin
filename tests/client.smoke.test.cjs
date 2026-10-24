@@ -7338,6 +7338,30 @@ test('rotation: a due rotation shows the next link, keeps history and the stored
 	assert.equal(r.history().length, 0, 'still no history after several rotations');
 });
 
+test('rotation: an automatic rotation keeps the manual framing — it never recentres the user crop', () => {
+	// A DECISION, not a coincidence (review 2026-10-23, and #95's "don't quietly fix it"):
+	// rotation is an AUTOMATIC event, and automatic events never overwrite a manual
+	// setting — the same family as "low-power does not pause rotation". A user who typed a
+	// URL (or picked an image) IS changing the composition, so `setUrl` / `setImage` reset
+	// the framing; the timer is not the user. The scheduled URL refresh takes the same
+	// path, so this is a rule with two members, not a quirk of one call site.
+	const r = bootRotation({
+		seed: { [FRAME_X_KEY]: '-40', [FRAME_Y_KEY]: '25', [FRAME_ZOOM_KEY]: '180' }
+	});
+	assert.equal(r.url(), ROT_B, 'precondition: the automatic commit really happened');
+	assert.equal(r.h.localStorage.getItem(FRAME_X_KEY), '-40', 'the manual X offset survives the rotation');
+	assert.equal(r.h.localStorage.getItem(FRAME_Y_KEY), '25', 'and Y');
+	assert.equal(r.h.localStorage.getItem(FRAME_ZOOM_KEY), '180', 'and the zoom');
+	assert.equal(r.g.main().style.backgroundPosition, 'calc(50% - 40vw) calc(50% + 25vh)',
+		'the rotated image is painted with the user crop, not centred');
+	assert.equal(r.g.main().style.transform, 'scale(1.8)', 'and with the user zoom');
+	// Reverse leg, so nobody reads this as "the reset simply did not run": a MANUAL change
+	// of the same URL kind must still recentre — that is the rule this one is carved out of.
+	r.adv.setUrl('https://cdn.example.com/manual.jpg');
+	assert.equal(r.h.localStorage.getItem(FRAME_X_KEY), '0', 'a manual link change is the user changing the composition');
+	assert.equal(r.h.localStorage.getItem(FRAME_ZOOM_KEY), '100');
+});
+
 test('rotation: every entry passes the gate on every path, and one bad entry never costs the others', () => {
 	const GOOD1 = 'https://good1.example.com/a.jpg';
 	const GOOD2 = 'https://good2.example.com/b.jpg';
